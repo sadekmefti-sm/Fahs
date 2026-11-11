@@ -68,9 +68,7 @@ data class InspectionReportData(
     val totalApplicableCount: Int,
     val coveragePercent: Int,
     val hasObdScanIncluded: Boolean,
-    val obdSummaryNote: String?,
-    val vinAnalysis: VinAnalysisResult?,
-    val plateAnalysis: AlgerianPlateResult?
+    val obdSummaryNote: String?
 ) {
     fun getVerdictTitle(lang: AppLanguage): String = when (verdict) {
         "INCOMPLETE" -> when (lang) {
@@ -295,14 +293,6 @@ object ReportEngine {
         val maxTotalDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.maxCostDzd }
         val avgTotalDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.avgCostDzd }
 
-        val vinAnalysis = if (inspection.vin.isNotBlank()) {
-            VinAndPlateEngine.analyzeVin(inspection.vin)
-        } else null
-
-        val plateAnalysis = if (inspection.plateNumber.isNotBlank()) {
-            VinAndPlateEngine.parseAlgerianPlate(inspection.plateNumber)
-        } else null
-
         return InspectionReportData(
             inspection = inspection,
             overallScore = finalScore,
@@ -324,9 +314,7 @@ object ReportEngine {
             totalApplicableCount = totalApplicableCount,
             coveragePercent = coveragePercent,
             hasObdScanIncluded = obdSaved != null,
-            obdSummaryNote = obdSaved?.note,
-            vinAnalysis = vinAnalysis,
-            plateAnalysis = plateAnalysis
+            obdSummaryNote = obdSaved?.note
         )
     }
 

@@ -886,64 +886,52 @@ private fun IdentityAndPaperworkReportCard(
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = when (language) {
-                        AppLanguage.AR -> "الهوية، رقم الشاسيه (VIN) والوثائق الجزائرية"
-                        AppLanguage.FR -> "Identité, VIN, Immatriculation & Documents"
-                        AppLanguage.EN -> "Identity, VIN, Algerian Plate & Paperwork"
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Slate900
-                )
+            Text(
+                text = when (language) {
+                    AppLanguage.AR -> "تسمية السيارة ورقم الشاسيه الإلكتروني (إن وجد)"
+                    AppLanguage.FR -> "Repère d'immatriculation & N° de châssis OBD2"
+                    AppLanguage.EN -> "Optional Plate Label & OBD2 Chassis Number"
+                },
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = Slate900
+            )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            val vinDisplay = report.inspection.vin.ifBlank {
-                when (language) {
-                    AppLanguage.AR -> "لم يتم إدخاله"
-                    AppLanguage.FR -> "Non renseigné"
-                    AppLanguage.EN -> "Not entered"
-                }
-            }
             val plateDisplay = report.inspection.plateNumber.ifBlank {
                 when (language) {
-                    AppLanguage.AR -> "لم يتم إدخالها"
-                    AppLanguage.FR -> "Non renseignée"
-                    AppLanguage.EN -> "Not entered"
+                    AppLanguage.AR -> "بدون تسمية اختيارية"
+                    AppLanguage.FR -> "Aucun repère saisi"
+                    AppLanguage.EN -> "No label entered"
                 }
             }
 
             Text(
-                text = "VIN: $vinDisplay",
+                text = when (language) {
+                    AppLanguage.AR -> "اللوحة / التسمية الاختيارية: $plateDisplay"
+                    AppLanguage.FR -> "Repère / Immatriculation : $plateDisplay"
+                    AppLanguage.EN -> "Optional plate / label: $plateDisplay"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 color = Slate900
             )
-            if (report.vinAnalysis != null && report.vinAnalysis.isFormatValid) {
-                Text(
-                    text = "${report.vinAnalysis.manufacturer} • ${report.vinAnalysis.countryFr}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Emerald800
-                )
-            }
 
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = "Immatriculation: $plateDisplay",
-                style = MaterialTheme.typography.bodyMedium,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = Slate900
-            )
-            if (report.plateAnalysis != null && report.plateAnalysis.isValidFormat) {
+            if (report.inspection.vin.isNotBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Wilaya ${report.plateAnalysis.getWilayaDisplay(language)} • ${report.plateAnalysis.getCategoryName(language)} • ${report.plateAnalysis.registrationYear ?: "00 (Provisoire)"}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Emerald800
+                    text = when (language) {
+                        AppLanguage.AR -> "رقم الشاسيه المقروء من كمبيوتر السيارة (09 02): ${report.inspection.vin}"
+                        AppLanguage.FR -> "N° de châssis lu dans le calculateur (09 02) : ${report.inspection.vin}"
+                        AppLanguage.EN -> "Chassis number read from car ECU (09 02): ${report.inspection.vin}"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = Slate900
                 )
             }
 

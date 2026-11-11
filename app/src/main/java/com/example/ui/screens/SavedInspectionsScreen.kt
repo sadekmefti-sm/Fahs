@@ -751,8 +751,9 @@ fun SavedInspectionDetailedCard(
                         fontWeight = FontWeight.Bold,
                         color = Slate900
                     )
+                    val plateSuffix = if (inspection.plateNumber.isNotBlank()) " • ${inspection.plateNumber}" else ""
                     Text(
-                        text = "${inspection.carGeneration} • ${inspection.carYear}",
+                        text = "${inspection.carGeneration} • ${inspection.carYear}$plateSuffix",
                         style = MaterialTheme.typography.bodySmall,
                         color = Slate600
                     )

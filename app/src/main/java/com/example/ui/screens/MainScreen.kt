@@ -307,7 +307,7 @@ fun MainScreen(
                         language = currentLanguage,
                         initialQuickMode = preferredQuickMode,
                         onBack = { viewModel.selectTab(NavTab.HOME) },
-                        onCarConfirmed = { brand, model, generation, year, fuel, gearbox, engine, isQuick ->
+                        onCarConfirmed = { brand, model, generation, year, fuel, gearbox, engine, isQuick, plateNumber ->
                             viewModel.createConfiguredInspection(
                                 brand = brand,
                                 model = model,
@@ -316,41 +316,11 @@ fun MainScreen(
                                 fuelType = fuel,
                                 gearboxType = gearbox,
                                 engineDesc = engine,
-                                isQuickMode = isQuick
+                                isQuickMode = isQuick,
+                                plateNumber = plateNumber
                             )
                         }
                     )
-                }
-
-                NavTab.IDENTITY_CHECK -> {
-                    val currentInsp = activeInspection
-                    if (currentInsp != null) {
-                        IdentityVerificationScreen(
-                            inspection = currentInsp,
-                            language = currentLanguage,
-                            onBack = { viewModel.selectTab(NavTab.CAR_SELECTION) },
-                            onSaveAndProceedToChecklist = { vin, plateNumber, docSummaryNote ->
-                                viewModel.saveIdentityAndProceedToChecklist(
-                                    vin = vin,
-                                    plateNumber = plateNumber,
-                                    docSummaryNote = docSummaryNote
-                                )
-                                scope.launch {
-                                    val msg = when (currentLanguage) {
-                                        AppLanguage.AR -> "تم حفظ بيانات الشاسيه واللوحة بنجاح"
-                                        AppLanguage.FR -> "VIN et plaque enregistrés avec succès"
-                                        AppLanguage.EN -> "VIN and registration plate saved"
-                                    }
-                                    snackbarHostState.showSnackbar(msg)
-                                }
-                            },
-                            onSkipToChecklist = {
-                                viewModel.selectTab(NavTab.CHECKLIST_WIZARD)
-                            }
-                        )
-                    } else {
-                        viewModel.selectTab(NavTab.HOME)
-                    }
                 }
 
                 NavTab.CHECKLIST_WIZARD -> {
@@ -509,10 +479,11 @@ fun MainScreen(
                         activeInspection = activeInspection,
                         initialScanResult = lastObdScanResult,
                         isDeveloperModeEnabled = isDeveloperModeEnabled,
-                        onSaveScanToInspection = { scanResult, milBulbLit ->
+                        onSaveScanToInspection = { scanResult, milBulbLit, ecuVinComparison ->
                             viewModel.saveObdScanToActiveInspection(
                                 scanResult = scanResult,
                                 milBulbLitOnDashboard = milBulbLit,
+                                ecuVinComparison = ecuVinComparison,
                                 returnToChecklist = activeInspection != null
                             )
                             scope.launch {

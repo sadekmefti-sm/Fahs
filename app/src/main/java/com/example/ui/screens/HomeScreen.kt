@@ -758,8 +758,9 @@ fun InspectionCardItem(
                         fontWeight = FontWeight.Bold,
                         color = Slate900
                     )
+                    val plateSuffix = if (inspection.plateNumber.isNotBlank()) " • ${inspection.plateNumber}" else ""
                     Text(
-                        text = "${inspection.carGeneration.ifBlank { inspection.carYear.toString() }} • ${inspection.engineDescription.ifBlank { inspection.fuelType }}",
+                        text = "${inspection.carGeneration.ifBlank { inspection.carYear.toString() }} • ${inspection.engineDescription.ifBlank { inspection.fuelType }}$plateSuffix",
                         style = MaterialTheme.typography.bodySmall,
                         color = Slate600
                     )

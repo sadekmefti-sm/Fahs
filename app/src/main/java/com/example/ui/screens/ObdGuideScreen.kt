@@ -63,6 +63,7 @@ import com.example.core.i18n.Strings
 import com.example.data.local.InspectionEntity
 import com.example.data.model.AlgerianCarCatalog
 import com.example.domain.BluetoothElm327Transport
+import com.example.domain.EcuVinComparisonChoice
 import com.example.domain.ObdDiagnosticEngine
 import com.example.domain.ObdScanResult
 import com.example.domain.ObdSimulatorProfile
@@ -95,7 +96,7 @@ fun ObdGuideScreen(
     activeInspection: InspectionEntity? = null,
     initialScanResult: ObdScanResult? = null,
     isDeveloperModeEnabled: Boolean = false,
-    onSaveScanToInspection: (ObdScanResult, Boolean) -> Unit = { _, _ -> },
+    onSaveScanToInspection: (ObdScanResult, Boolean, EcuVinComparisonChoice) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -114,6 +115,9 @@ fun ObdGuideScreen(
     }
 
     var milBulbLitOnDashboard by remember { mutableStateOf(true) }
+    var ecuVinComparison by remember(currentScanResult?.ecuVin) {
+        mutableStateOf(EcuVinComparisonChoice.COULD_NOT_COMPARE)
+    }
 
     // Real Bluetooth states
     var hasBtPermission by remember {
@@ -529,16 +533,44 @@ fun ObdGuideScreen(
                                         shape = RoundedCornerShape(12.dp),
                                         color = StatusWarningAmberContainer
                                     ) {
-                                        Text(
-                                            text = when (language) {
-                                                AppLanguage.AR -> "لم يتم العثور على جهاز مقترن. يرجى توصيل جهاز ELM327 بمنفذ السيارة، فتح Contact، والاقتران بـ OBDII في إعدادات بلوتوث الهاتف (الرمز 1234 أو 0000)."
-                                                AppLanguage.FR -> "Aucun boîtier appairé détecté. Branchez l'ELM327, mettez le contact et appairez 'OBDII' dans les paramètres Bluetooth du téléphone (code 1234 ou 0000)."
-                                                AppLanguage.EN -> "No paired adapter found. Plug in the ELM327, turn ignition ON, and pair 'OBDII' in your phone's Bluetooth settings (PIN 1234 or 0000)."
-                                            },
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = StatusWarningAmberOnContainer,
-                                            modifier = Modifier.padding(12.dp)
-                                        )
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text(
+                                                text = when (language) {
+                                                    AppLanguage.AR -> "لم يتم العثور على جهاز مقترن. يرجى توصيل جهاز ELM327 بمنفذ السيارة، فتح Contact، والاقتران بـ OBDII في إعدادات بلوتوث الهاتف (الرمز 1234 أو 0000)."
+                                                    AppLanguage.FR -> "Aucun boîtier appairé détecté. Branchez l'ELM327, mettez le contact et appairez 'OBDII' dans les paramètres Bluetooth du téléphone (code 1234 ou 0000)."
+                                                    AppLanguage.EN -> "No paired adapter found. Plug in the ELM327, turn ignition ON, and pair 'OBDII' in your phone's Bluetooth settings (PIN 1234 or 0000)."
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = StatusWarningAmberOnContainer
+                                            )
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            Button(
+                                                onClick = {
+                                                    BluetoothElm327Transport.openAndroidBluetoothSettings(context)
+                                                },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .testTag("open_android_bt_settings_btn"),
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Emerald700)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Bluetooth,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = when (language) {
+                                                        AppLanguage.AR -> "فتح إعدادات البلوتوث في الهاتف للاقتران"
+                                                        AppLanguage.FR -> "Ouvrir les paramètres Bluetooth Android"
+                                                        AppLanguage.EN -> "Open Android Bluetooth Settings to Pair"
+                                                    },
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White
+                                                )
+                                            }
+                                        }
                                     }
                                 } else {
                                     pairedDevices.forEach { dev: PairedBluetoothDevice ->
@@ -578,7 +610,11 @@ fun ObdGuideScreen(
                                                     onClick = {
                                                         isScanningBt = true
                                                         scope.launch {
-                                                            btStatusMessage = "Connexion RFCOMM SPP à ${dev.name}..."
+                                                            btStatusMessage = when (language) {
+                                                                AppLanguage.AR -> "جاري الاتصال عبر البلوتوث بـ ${dev.name}..."
+                                                                AppLanguage.FR -> "Connexion Bluetooth RFCOMM à ${dev.name}..."
+                                                                AppLanguage.EN -> "Connecting via Bluetooth RFCOMM to ${dev.name}..."
+                                                            }
                                                             val transport = BluetoothElm327Transport(
                                                                 context = context,
                                                                 deviceAddress = dev.address,
@@ -589,6 +625,7 @@ fun ObdGuideScreen(
                                                                 currentScanResult = ObdDiagnosticEngine.executeRealObdScan(
                                                                     transport = transport,
                                                                     expectedVin = expectedVin,
+                                                                    language = language,
                                                                     onProgress = { step -> btStatusMessage = step }
                                                                 )
                                                                 transport.disconnect()
@@ -623,6 +660,30 @@ fun ObdGuideScreen(
                                                 }
                                             }
                                         }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            BluetoothElm327Transport.openAndroidBluetoothSettings(context)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Bluetooth,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = when (language) {
+                                                AppLanguage.AR -> "الجهاز غير ظاهر؟ افتح إعدادات البلوتوث للاقتران"
+                                                AppLanguage.FR -> "Boîtier absent ? Ouvrir les paramètres Bluetooth"
+                                                AppLanguage.EN -> "Dongle not listed? Open Bluetooth Settings"
+                                            },
+                                            style = MaterialTheme.typography.labelMedium
+                                        )
                                     }
                                 }
 
@@ -667,11 +728,35 @@ fun ObdGuideScreen(
                             scanResult = realScan,
                             language = language,
                             expectedVin = expectedVin,
+                            ecuVinComparison = ecuVinComparison,
+                            onEcuVinComparisonChange = { ecuVinComparison = it },
                             milBulbLitOnDashboard = milBulbLitOnDashboard,
                             onMilBulbToggle = { milBulbLitOnDashboard = it },
                             hasActiveInspection = activeInspection != null,
                             onSaveToInspection = {
-                                onSaveScanToInspection(realScan, milBulbLitOnDashboard)
+                                onSaveScanToInspection(realScan, milBulbLitOnDashboard, ecuVinComparison)
+                            },
+                            isDeveloperModeEnabled = isDeveloperModeEnabled,
+                            onExportRawLog = {
+                                val carCtx = if (activeInspection != null) {
+                                    "${activeInspection.carBrand} ${activeInspection.carModel} (${activeInspection.carYear}) [${realScan.detectedProtocol}]"
+                                } else {
+                                    realScan.detectedProtocol
+                                }
+                                val savedFile = BluetoothElm327Transport.saveRawExchangeLogToFile(
+                                    context = context,
+                                    exchanges = realScan.rawExchangeLog,
+                                    adapterName = realScan.adapterVersion,
+                                    carLabel = carCtx
+                                )
+                                if (savedFile != null) {
+                                    BluetoothElm327Transport.shareRawExchangeLogFile(context, savedFile)
+                                    btStatusMessage = when (language) {
+                                        AppLanguage.AR -> "تم حفظ ملف السجل الخام: ${savedFile.name}"
+                                        AppLanguage.FR -> "Journal brut enregistré : ${savedFile.name}"
+                                        AppLanguage.EN -> "Raw exchange log saved: ${savedFile.name}"
+                                    }
+                                }
                             }
                         )
                     }

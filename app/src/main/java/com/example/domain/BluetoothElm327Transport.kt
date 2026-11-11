@@ -7,21 +7,35 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 data class PairedBluetoothDevice(
     val name: String,
     val address: String,
     val isLikelyObdAdapter: Boolean
+)
+
+data class ObdCommandExchange(
+    val timestampMs: Long,
+    val command: String,
+    val durationMs: Long,
+    val rawResponse: String
 )
 
 /**
@@ -36,7 +50,7 @@ interface BrandSecondaryEcuMileageReader {
 
 /**
  * Classic Bluetooth (SPP / RFCOMM) implementation of [ObdTransport]
- * specifically tuned for cheap ELM327 v1.5 and v2.1 clone dongles common in Algeria.
+ * for ELM327 Bluetooth Classic dongles.
  *
  * Strictly READ-ONLY: blocks any Mode 04 (clear codes) or write commands.
  */
@@ -66,15 +80,78 @@ class BluetoothElm327Transport(
 
         fun requiredBluetoothPermissions(): Array<String> {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                arrayOf(
-                    Manifest.permission.BLUETOOTH_CONNECT,
-                    Manifest.permission.BLUETOOTH_SCAN
-                )
+                arrayOf(Manifest.permission.BLUETOOTH_CONNECT)
             } else {
-                arrayOf(
-                    Manifest.permission.BLUETOOTH,
-                    Manifest.permission.BLUETOOTH_ADMIN
-                )
+                arrayOf(Manifest.permission.BLUETOOTH)
+            }
+        }
+
+        fun openAndroidBluetoothSettings(context: Context) {
+            try {
+                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (_: Exception) {
+            }
+        }
+
+        fun saveRawExchangeLogToFile(
+            context: Context,
+            exchanges: List<ObdCommandExchange>,
+            adapterName: String,
+            carLabel: String
+        ): File? {
+            return try {
+                val dir = File(context.filesDir, "obd_logs")
+                if (!dir.exists()) {
+                    dir.mkdirs()
+                }
+                val dateFmt = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+                val humanFmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+                val now = Date()
+                val file = File(dir, "fahs_obd_raw_${dateFmt.format(now)}.txt")
+
+                val sb = StringBuilder()
+                sb.appendLine("=== FAHS OBD2 RAW EXCHANGE LOG (DEVELOPER MODE) ===")
+                sb.appendLine("Date: ${humanFmt.format(now)}")
+                sb.appendLine("Adapter: $adapterName")
+                sb.appendLine("Car Context: ${carLabel.ifBlank { "None selected" }}")
+                sb.appendLine("Total Commands: ${exchanges.size}")
+                sb.appendLine("===================================================")
+                sb.appendLine()
+
+                exchanges.forEachIndexed { index, ex ->
+                    val timeStr = humanFmt.format(Date(ex.timestampMs))
+                    sb.appendLine("[#${index + 1}] $timeStr (${ex.durationMs} ms)")
+                    sb.appendLine("TX > ${ex.command}")
+                    sb.appendLine("RX <")
+                    sb.appendLine(ex.rawResponse.ifBlank { "(empty)" })
+                    sb.appendLine("---------------------------------------------------")
+                }
+
+                file.writeText(sb.toString(), Charsets.UTF_8)
+                file
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        fun shareRawExchangeLogFile(context: Context, file: File) {
+            try {
+                val authority = "${context.packageName}.fileprovider"
+                val uri = FileProvider.getUriForFile(context, authority, file)
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, "Fahs OBD2 Raw Log - ${file.name}")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                val chooser = Intent.createChooser(shareIntent, file.name).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(chooser)
+            } catch (_: Exception) {
             }
         }
 
@@ -93,7 +170,7 @@ class BluetoothElm327Transport(
 
             return bonded.map { device ->
                 val devName = try {
-                    device.name ?: "Unknown Bluetooth Device"
+                    device.name ?: "Bluetooth Device"
                 } catch (_: SecurityException) {
                     "Bluetooth Device"
                 }
@@ -105,7 +182,8 @@ class BluetoothElm327Transport(
                     upper.contains("KONNWEI") ||
                     upper.contains("SCAN") ||
                     upper.contains("CAR") ||
-                    upper.contains("CBT")
+                    upper.contains("CBT") ||
+                    upper.contains("IOS-VLINK")
                 PairedBluetoothDevice(
                     name = devName,
                     address = device.address,
@@ -129,10 +207,6 @@ class BluetoothElm327Transport(
 
             val device = adapter.getRemoteDevice(deviceAddress) ?: return@withContext false
             val rfcommSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-            try {
-                adapter.cancelDiscovery()
-            } catch (_: Exception) {
-            }
 
             rfcommSocket.connect()
             socket = rfcommSocket
@@ -145,7 +219,7 @@ class BluetoothElm327Transport(
         }
     }
 
-    override suspend fun sendCommand(rawCommand: String): String = withContext(Dispatchers.IO) {
+    override suspend fun sendCommand(rawCommand: String, timeoutMs: Long): String = withContext(Dispatchers.IO) {
         val cleanCmd = rawCommand.trim().uppercase()
 
         // SAFETY GUARD: Never allow Mode 04 (Clear Trouble Codes) or ECU write commands
@@ -157,13 +231,19 @@ class BluetoothElm327Transport(
         val inp = inputStream ?: return@withContext "ERROR_NOT_CONNECTED"
 
         try {
+            // Drain any stale bytes sitting in the input buffer before sending
+            while (inp.available() > 0) {
+                val discard = ByteArray(128)
+                inp.read(discard)
+            }
+
             // Write command terminated by carriage return
             out.write("$cleanCmd\r".toByteArray(Charsets.US_ASCII))
             out.flush()
 
-            // Clone-tolerant read loop waiting for '>' prompt character
+            // Read until the ELM327 '>' prompt character or timeoutMs expires
             val responseBuilder = StringBuilder()
-            val result = withTimeoutOrNull(3500L) {
+            val result = withTimeoutOrNull(timeoutMs) {
                 val buffer = ByteArray(256)
                 while (true) {
                     if (inp.available() > 0) {
@@ -176,15 +256,16 @@ class BluetoothElm327Transport(
                             }
                         }
                     } else {
-                        delay(40L)
+                        delay(35L)
                     }
                 }
                 responseBuilder.toString()
             } ?: responseBuilder.toString()
 
+            // Preserve line breaks (\n) so multi-frame (0:, 1:) and multi-ECU replies stay distinct
             result
-                .replace("\r", " ")
-                .replace("\n", " ")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
                 .replace(">", "")
                 .trim()
         } catch (_: Exception) {

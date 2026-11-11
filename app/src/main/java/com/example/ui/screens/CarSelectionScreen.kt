@@ -105,7 +105,8 @@ fun CarSelectionScreen(
         fuelType: String,
         gearboxType: String,
         engineDesc: String,
-        isQuickMode: Boolean
+        isQuickMode: Boolean,
+        plateNumber: String
     ) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -121,6 +122,7 @@ fun CarSelectionScreen(
     var selectedGearbox by remember { mutableStateOf("MANUELLE") }
     var selectedEngine by remember { mutableStateOf("") }
     var isQuickMode by remember { mutableStateOf(initialQuickMode) }
+    var optionalPlateLabel by remember { mutableStateOf("") }
 
     // Custom "Other Car" states
     var customBrand by remember { mutableStateOf("") }
@@ -729,6 +731,58 @@ fun CarSelectionScreen(
                     }
                 }
 
+                // Optional free-text plate number or label (no validation, no decoding)
+                item {
+                    ConfigSectionCard(
+                        title = when (language) {
+                            AppLanguage.AR -> "6. رقم اللوحة أو علامة مميزة (اختياري)"
+                            AppLanguage.FR -> "6. Immatriculation ou repère (optionnel)"
+                            AppLanguage.EN -> "6. Plate Number or Label (Optional)"
+                        }
+                    ) {
+                        Column {
+                            Text(
+                                text = when (language) {
+                                    AppLanguage.AR -> "تسمية حرة لمساعدتك في التعرف على هذه السيارة ضمن الفحوصات المحفوظة (بدون تحقق أو فك تشفير)."
+                                    AppLanguage.FR -> "Note libre pour reconnaître facilement cette voiture dans vos inspections sauvegardées."
+                                    AppLanguage.EN -> "Optional free-text label to help you recognise this car in your saved inspections."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Slate600
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = optionalPlateLabel,
+                                onValueChange = { optionalPlateLabel = it },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("optional_plate_label_input"),
+                                placeholder = {
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "مثال: 04821 118 16 أو سيارة البائع في البليدة"
+                                            AppLanguage.FR -> "Ex: 04821 118 16 ou Clio grise Blida"
+                                            AppLanguage.EN -> "e.g. 04821 118 16 or Grey Clio Blida"
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Slate400
+                                    )
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = Color.White,
+                                    unfocusedContainerColor = Color.White,
+                                    focusedBorderColor = Emerald700,
+                                    unfocusedBorderColor = Slate200,
+                                    focusedTextColor = Slate900,
+                                    unfocusedTextColor = Slate900
+                                )
+                            )
+                        }
+                    }
+                }
+
                 // Launch Inspection CTA Button
                 item {
                     Button(
@@ -744,7 +798,8 @@ fun CarSelectionScreen(
                                 selectedFuel,
                                 selectedGearbox,
                                 selectedEngine,
-                                isQuickMode
+                                isQuickMode,
+                                optionalPlateLabel.trim()
                             )
                         },
                         modifier = Modifier

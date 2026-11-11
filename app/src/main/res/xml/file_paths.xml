@@ -9,4 +9,7 @@
     <files-path
         name="inspection_photos"
         path="inspection_photos/" />
+    <files-path
+        name="obd_logs"
+        path="obd_logs/" />
 </paths>

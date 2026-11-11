@@ -14,6 +14,7 @@ import com.example.data.repository.InspectionRepository
 import com.example.data.repository.ShopSettings
 import com.example.data.repository.ShopSettingsRepository
 import com.example.domain.ChecklistEngine
+import com.example.domain.EcuVinComparisonChoice
 import com.example.domain.ObdScanResult
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,7 +30,6 @@ import kotlinx.coroutines.launch
 enum class NavTab {
     HOME,
     CAR_SELECTION,
-    IDENTITY_CHECK,
     CHECKLIST_WIZARD,
     REPORT,
     INSPECTIONS,
@@ -350,30 +350,6 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
         _selectedTab.value = NavTab.REPORT
     }
 
-    fun openIdentityCheckForActiveInspection() {
-        _selectedTab.value = NavTab.IDENTITY_CHECK
-    }
-
-    fun saveIdentityAndProceedToChecklist(
-        vin: String,
-        plateNumber: String,
-        docSummaryNote: String
-    ) {
-        val inspectionId = _activeInspectionId.value ?: return
-        viewModelScope.launch {
-            val current = repository.getInspection(inspectionId) ?: return@launch
-            repository.updateInspection(
-                current.copy(
-                    vin = vin,
-                    plateNumber = plateNumber,
-                    notes = docSummaryNote,
-                    updatedAt = System.currentTimeMillis()
-                )
-            )
-            _selectedTab.value = NavTab.CHECKLIST_WIZARD
-        }
-    }
-
     fun createConfiguredInspection(
         brand: String,
         model: String,
@@ -383,6 +359,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
         gearboxType: String,
         engineDesc: String,
         isQuickMode: Boolean,
+        plateNumber: String = "",
         onCreated: (Long) -> Unit = {}
     ) {
         viewModelScope.launch {
@@ -401,6 +378,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 fuelType = fuelType,
                 gearboxType = gearboxType,
                 engineDescription = engineDesc,
+                plateNumber = plateNumber.trim(),
                 inspectionMode = if (isQuickMode) "QUICK" else "FULL",
                 totalQuestions = adaptiveList.size,
                 answeredQuestions = 0,
@@ -408,7 +386,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
             )
             val id = repository.insertInspection(newInspection)
             _activeInspectionId.value = id
-            _selectedTab.value = NavTab.IDENTITY_CHECK
+            _selectedTab.value = NavTab.CHECKLIST_WIZARD
             onCreated(id)
         }
     }
@@ -507,6 +485,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
     fun saveObdScanToActiveInspection(
         scanResult: ObdScanResult,
         milBulbLitOnDashboard: Boolean,
+        ecuVinComparison: EcuVinComparisonChoice = EcuVinComparisonChoice.COULD_NOT_COMPARE,
         returnToChecklist: Boolean = true
     ) {
         // Hard block: a simulated result must never be saved into an inspection
@@ -518,10 +497,13 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
             val current = repository.getInspection(inspectionId) ?: return@launch
             val existingAnswers = activeInspectionAnswers.value
 
-            val isMilTampered = !milBulbLitOnDashboard || (scanResult.milCommandedOn && !milBulbLitOnDashboard)
+            val isMilTampered = !milBulbLitOnDashboard || (scanResult.milCommandedOn == true && !milBulbLitOnDashboard)
+            val isEcuVinDifferent = !scanResult.ecuVin.isNullOrBlank() &&
+                ecuVinComparison == EcuVinComparisonChoice.DIFFERENT
             val hasFaultsOrFraud = scanResult.dtcList.isNotEmpty() ||
                 scanResult.isRecentlyClearedFraudAlert ||
-                isMilTampered
+                isMilTampered ||
+                isEcuVinDifferent
 
             // Only sum sourced fault-code repair costs; never add fixed 25,000 / 35,000 DZD amounts
             val obdCostDzd = scanResult.dtcList.sumOf { it.getAverageCostDzd() }
@@ -532,15 +514,29 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 scanResult.dtcList.joinToString(", ") { "${it.code} (${it.dtcType.name})" }
             }
 
+            val distKm = scanResult.distanceSinceCodesClearedKm
+            val warmups = scanResult.warmupsSinceCodesCleared
             val obdSummaryNote = buildString {
                 append("[OBD2 Scan: $dtcCodesSummary")
                 if (scanResult.isRecentlyClearedFraudAlert) {
-                    append(" | ALERTE: Mémoire effacée il y a ${scanResult.distanceSinceCodesClearedKm} km (${scanResult.warmupsSinceCodesCleared} cycles)")
-                } else if (scanResult.distanceSinceCodesClearedKm >= 0) {
-                    append(" | Effacé il y a ${scanResult.distanceSinceCodesClearedKm} km")
+                    val distPart = if (distKm != null) "il y a $distKm km" else ""
+                    val warmPart = if (warmups != null) " ($warmups cycles)" else ""
+                    append(" | Note: Mémoire remise à zéro récemment $distPart$warmPart".trimEnd())
+                } else if (distKm != null && distKm >= 0) {
+                    append(" | Effacé il y a $distKm km")
                 }
                 if (isMilTampered) {
-                    append(" | ALERTE: Voyant Check-Engine masqué/absent au contact")
+                    append(" | ALERTE: Voyant Check-Engine absent au contact")
+                }
+                if (!scanResult.ecuVin.isNullOrBlank()) {
+                    when (ecuVinComparison) {
+                        EcuVinComparisonChoice.SAME ->
+                            append(" | Châssis ECU (${scanResult.ecuVin}) = Carte grise")
+                        EcuVinComparisonChoice.DIFFERENT ->
+                            append(" | ALERTE CRITIQUE: Châssis ECU (${scanResult.ecuVin}) différent de la carte grise")
+                        EcuVinComparisonChoice.COULD_NOT_COMPARE ->
+                            append(" | Châssis ECU: ${scanResult.ecuVin} (non comparé)")
+                    }
                 }
                 append("]")
             }
@@ -555,7 +551,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 questionAr = "الفحص الإلكتروني للكمبيوتر OBD2 (أكواد الأعطال ومسح الذاكرة الحديث)",
                 questionEn = "OBD2 Electronic ECU Scan (Fault codes, MIL bulb & recently cleared memory)",
                 status = if (!scanResult.isCommunicationSuccess) "UNCHECKED" else if (hasFaultsOrFraud) "PROBLEM" else "GOOD",
-                severity = if (scanResult.isRecentlyClearedFraudAlert || isMilTampered || scanResult.dtcList.any { it.severity.name == "CRITICAL" }) "CRITICAL" else "IMPORTANT",
+                severity = if (scanResult.isRecentlyClearedFraudAlert || isMilTampered || isEcuVinDifferent || scanResult.dtcList.any { it.severity.name == "CRITICAL" }) "CRITICAL" else "IMPORTANT",
                 estimatedCostDzd = if (hasFaultsOrFraud) obdCostDzd else 0,
                 note = obdSummaryNote,
                 photoUri = null,
@@ -578,8 +574,10 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 "${current.notes}\n$obdSummaryNote"
             }
 
+            val updatedVin = if (!scanResult.ecuVin.isNullOrBlank()) scanResult.ecuVin else current.vin
             repository.updateInspection(
                 current.copy(
+                    vin = updatedVin,
                     problemCount = problemCount,
                     totalEstimatedCostDzd = totalEstCost,
                     notes = mergedNotes,

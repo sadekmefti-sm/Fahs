@@ -169,12 +169,11 @@ object PdfReportGenerator {
         drawMultilineText(canvas, summaryText, bodyPaint, MARGIN_H + 14f, yPos + 32f, CONTENT_WIDTH - 28, alignment)
         yPos += verdictBoxHeight + 14f
 
-        // 3. Identity, VIN & Repair Cost Summary Box
-        val vinText = if (report.inspection.vin.isNotBlank()) report.inspection.vin else "Non renseigné / غير مدخل"
-        val plateText = if (report.inspection.plateNumber.isNotBlank()) report.inspection.plateNumber else "Non renseignée / غير مدخلة"
-        val wilayaInfo = report.plateAnalysis?.let {
-            if (it.isValidFormat) " (${it.wilayaCode} - ${it.wilayaNameFr})" else ""
-        } ?: ""
+        // 3. Optional Plate Label, ECU Chassis Number (if read) & Repair Cost Summary Box
+        val ecuVinPart = if (report.inspection.vin.isNotBlank()) {
+            "N° Châssis ECU (09 02): ${report.inspection.vin}   |   "
+        } else ""
+        val plateText = if (report.inspection.plateNumber.isNotBlank()) report.inspection.plateNumber else "—"
 
         val costRangeLine = when (language) {
             AppLanguage.AR -> "التكلفة التقديرية للإصلاحات: ${ReportEngine.formatDzd(report.minTotalRepairDzd)} إلى ${ReportEngine.formatDzd(report.maxTotalRepairDzd)} (${ReportEngine.formatMillionsCentimes(report.avgTotalRepairDzd, language)})"
@@ -203,7 +202,7 @@ object PdfReportGenerator {
         )
         drawMultilineText(
             canvas,
-            "VIN: $vinText   |   Immatriculation (Carte grise): $plateText$wilayaInfo",
+            "${ecuVinPart}Repère / Immatriculation: $plateText",
             bodyBoldPaint,
             MARGIN_H + 12f,
             yPos + 10f,

@@ -19,8 +19,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Warning
@@ -30,6 +32,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,12 +43,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.i18n.AppLanguage
 import com.example.data.model.ItemSeverity
+import com.example.domain.ClearedCodesAlertLevel
 import com.example.domain.DtcInfo
+import com.example.domain.EcuVinComparisonChoice
 import com.example.domain.LiveParameterGauge
+import com.example.domain.ObdDiagnosticEngine
 import com.example.domain.ObdScanResult
 import com.example.ui.theme.Emerald100
 import com.example.ui.theme.Emerald200
@@ -75,17 +82,21 @@ import com.example.ui.theme.StatusWarningAmberOnContainer
 fun ObdScanResultSection(
     scanResult: ObdScanResult,
     language: AppLanguage,
-    expectedVin: String,
+    expectedVin: String = "",
+    ecuVinComparison: EcuVinComparisonChoice = EcuVinComparisonChoice.COULD_NOT_COMPARE,
+    onEcuVinComparisonChange: (EcuVinComparisonChoice) -> Unit = {},
     milBulbLitOnDashboard: Boolean,
     onMilBulbToggle: (Boolean) -> Unit,
     hasActiveInspection: Boolean,
-    onSaveToInspection: () -> Unit
+    onSaveToInspection: () -> Unit,
+    isDeveloperModeEnabled: Boolean = false,
+    onExportRawLog: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 1. Adapter & Protocol Status Banner
+        // 1. Adapter & Protocol Status Banner (Never labels dongle a clone)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -144,6 +155,13 @@ fun ObdScanResultSection(
         }
 
         if (!scanResult.isCommunicationSuccess) {
+            if (isDeveloperModeEnabled && scanResult.rawExchangeLog.isNotEmpty()) {
+                DeveloperRawExchangeLogCard(
+                    exchangeCount = scanResult.rawExchangeLog.size,
+                    language = language,
+                    onExportRawLog = onExportRawLog
+                )
+            }
             if (hasActiveInspection && !scanResult.isSimulated) {
                 SaveObdToInspectionButton(
                     language = language,
@@ -153,7 +171,7 @@ fun ObdScanResultSection(
             return@Column
         }
 
-        // 2. Prominent Cleared-Code Fraud Detection Card
+        // 2. Cleared-Codes Status Card (Calm, non-accusing, based strictly on values actually read)
         ClearedCodeFraudCard(
             scanResult = scanResult,
             language = language
@@ -174,16 +192,17 @@ fun ObdScanResultSection(
             language = language
         )
 
-        // 5. ECU VIN Consistency Check
+        // 5. ECU VIN Consistency Check (Service 09 02)
         if (!scanResult.ecuVin.isNullOrBlank()) {
             EcuVinComparisonCard(
                 ecuVin = scanResult.ecuVin,
-                expectedVin = expectedVin,
+                comparisonChoice = ecuVinComparison,
+                onComparisonChange = onEcuVinComparisonChange,
                 language = language
             )
         }
 
-        // 6. 60-Second Guided Live Engine Health Gauges
+        // 6. Live Engine Health Gauges
         if (scanResult.liveParameters.isNotEmpty()) {
             LiveGaugesCard(
                 gauges = scanResult.liveParameters,
@@ -194,7 +213,16 @@ fun ObdScanResultSection(
         // 7. Brand-Specific Secondary ECU Odometer Architecture Info
         SecondaryEcuMileageInfoCard(language = language)
 
-        // 8. Save Scan to Active Inspection ( strictly blocked for simulated results )
+        // 8. Developer Mode Raw Exchange Log Export (only in Developer Mode)
+        if (isDeveloperModeEnabled && scanResult.rawExchangeLog.isNotEmpty()) {
+            DeveloperRawExchangeLogCard(
+                exchangeCount = scanResult.rawExchangeLog.size,
+                language = language,
+                onExportRawLog = onExportRawLog
+            )
+        }
+
+        // 9. Save Scan to Active Inspection (strictly blocked for simulated results)
         if (hasActiveInspection && !scanResult.isSimulated) {
             SaveObdToInspectionButton(
                 language = language,
@@ -209,52 +237,93 @@ private fun ClearedCodeFraudCard(
     scanResult: ObdScanResult,
     language: AppLanguage
 ) {
-    val isFraud = scanResult.isRecentlyClearedFraudAlert
+    val alertLevel = scanResult.clearedCodesAlertLevel
+    val notAvailableText = ObdDiagnosticEngine.notAvailableLabel(language)
+
+    val containerColor = when (alertLevel) {
+        ClearedCodesAlertLevel.STRONG_WARNING -> StatusErrorRedContainer
+        ClearedCodesAlertLevel.CANNOT_RULE_OUT -> StatusWarningAmberContainer
+        ClearedCodesAlertLevel.NOT_AVAILABLE -> Slate100
+        ClearedCodesAlertLevel.NONE_NORMAL -> StatusPassGreenContainer
+    }
+    val borderColor = when (alertLevel) {
+        ClearedCodesAlertLevel.STRONG_WARNING -> StatusErrorRed
+        ClearedCodesAlertLevel.CANNOT_RULE_OUT -> StatusWarningAmber
+        ClearedCodesAlertLevel.NOT_AVAILABLE -> Slate200
+        ClearedCodesAlertLevel.NONE_NORMAL -> StatusPassGreen
+    }
+    val contentColor = when (alertLevel) {
+        ClearedCodesAlertLevel.STRONG_WARNING -> StatusErrorRedOnContainer
+        ClearedCodesAlertLevel.CANNOT_RULE_OUT -> StatusWarningAmberOnContainer
+        ClearedCodesAlertLevel.NOT_AVAILABLE -> Slate800
+        ClearedCodesAlertLevel.NONE_NORMAL -> StatusPassGreenOnContainer
+    }
+    val iconTint = when (alertLevel) {
+        ClearedCodesAlertLevel.STRONG_WARNING -> StatusErrorRed
+        ClearedCodesAlertLevel.CANNOT_RULE_OUT -> StatusWarningAmber
+        ClearedCodesAlertLevel.NOT_AVAILABLE -> Slate600
+        ClearedCodesAlertLevel.NONE_NORMAL -> StatusPassGreen
+    }
+    val iconVector = when (alertLevel) {
+        ClearedCodesAlertLevel.STRONG_WARNING -> Icons.Default.Warning
+        ClearedCodesAlertLevel.CANNOT_RULE_OUT -> Icons.Default.Info
+        ClearedCodesAlertLevel.NOT_AVAILABLE -> Icons.Default.Info
+        ClearedCodesAlertLevel.NONE_NORMAL -> Icons.Default.VerifiedUser
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("obd_cleared_fraud_card"),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isFraud) StatusErrorRedContainer else StatusPassGreenContainer
-        ),
-        border = BorderStroke(
-            width = 1.5.dp,
-            color = if (isFraud) StatusErrorRed else StatusPassGreen
-        )
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(width = 1.5.dp, color = borderColor)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = if (isFraud) Icons.Default.Warning else Icons.Default.VerifiedUser,
+                    imageVector = iconVector,
                     contentDescription = null,
-                    tint = if (isFraud) StatusErrorRed else StatusPassGreen,
+                    tint = iconTint,
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = if (isFraud) {
-                        when (language) {
-                            AppLanguage.AR -> "تنبيه هام: تم مسح ذاكرة الأعطال قبل البيع بوقت قصير جداً!"
-                            AppLanguage.FR -> "Alerte : Mémoire des défauts effacée très récemment !"
-                            AppLanguage.EN -> "Alert: Fault Memory Was Cleared Very Recently!"
+                    text = when (alertLevel) {
+                        ClearedCodesAlertLevel.STRONG_WARNING -> when (language) {
+                            AppLanguage.AR -> "ملاحظة هامة: تم مسح ذاكرة الأعطال منذ فترة قصيرة"
+                            AppLanguage.FR -> "Note importante : Mémoire des défauts remise à zéro récemment"
+                            AppLanguage.EN -> "Important Note: Fault Memory Was Reset Recently"
                         }
-                    } else {
-                        when (language) {
-                            AppLanguage.AR -> "ذاكرة الكمبيوتر لم يتم مسحها حديثاً (سجل موثوق)"
-                            AppLanguage.FR -> "Mémoire non effacée récemment (Historique fiable)"
-                            AppLanguage.EN -> "Memory Not Recently Cleared (Reliable History)"
+                        ClearedCodesAlertLevel.CANNOT_RULE_OUT -> when (language) {
+                            AppLanguage.AR -> "اختبارات الجاهزية غير مكتملة: لا يمكن استبعاد مسح حديث للذاكرة"
+                            AppLanguage.FR -> "Tests d'autodiagnostic incomplets : remise à zéro récente non exclue"
+                            AppLanguage.EN -> "Readiness Monitors Incomplete: Cannot Rule Out a Recent Reset"
+                        }
+                        ClearedCodesAlertLevel.NOT_AVAILABLE -> when (language) {
+                            AppLanguage.AR -> "بيانات مسح الذاكرة غير متوفرة في هذه السيارة"
+                            AppLanguage.FR -> "Historique d'effacement non disponible sur cette voiture"
+                            AppLanguage.EN -> "Reset History Not Available on This Car"
+                        }
+                        ClearedCodesAlertLevel.NONE_NORMAL -> when (language) {
+                            AppLanguage.AR -> "ذاكرة الكمبيوتر لم يتم مسحها حديثاً"
+                            AppLanguage.FR -> "Mémoire non effacée récemment"
+                            AppLanguage.EN -> "Fault Memory Not Cleared Recently"
                         }
                     },
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (isFraud) StatusErrorRedOnContainer else StatusPassGreenOnContainer
+                    color = contentColor
                 )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // 4 Metric Pills
+            val distKm = scanResult.distanceSinceCodesClearedKm
+            val warmups = scanResult.warmupsSinceCodesCleared
+            val incMon = scanResult.incompleteReadinessMonitors
+            val totMon = scanResult.totalReadinessMonitors
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -263,10 +332,10 @@ private fun ClearedCodeFraudCard(
                     label = when (language) {
                         AppLanguage.AR -> "المسافة منذ المسح"
                         AppLanguage.FR -> "Distance depuis RAZ"
-                        AppLanguage.EN -> "Distance since clear"
+                        AppLanguage.EN -> "Distance since reset"
                     },
-                    value = "${scanResult.distanceSinceCodesClearedKm} km",
-                    isSuspicious = scanResult.distanceSinceCodesClearedKm < 50,
+                    value = if (distKm != null) "$distKm km" else notAvailableText,
+                    isSuspicious = distKm != null && distKm < 50,
                     modifier = Modifier.weight(1f)
                 )
                 FraudMetricPill(
@@ -275,8 +344,8 @@ private fun ClearedCodeFraudCard(
                         AppLanguage.FR -> "Cycles de chauffe"
                         AppLanguage.EN -> "Warm-up cycles"
                     },
-                    value = "${scanResult.warmupsSinceCodesCleared}",
-                    isSuspicious = scanResult.warmupsSinceCodesCleared < 3,
+                    value = warmups?.toString() ?: notAvailableText,
+                    isSuspicious = warmups != null && warmups < 3,
                     modifier = Modifier.weight(1f)
                 )
                 FraudMetricPill(
@@ -285,25 +354,65 @@ private fun ClearedCodeFraudCard(
                         AppLanguage.FR -> "Tests incomplets"
                         AppLanguage.EN -> "Incomplete monitors"
                     },
-                    value = "${scanResult.incompleteReadinessMonitors}/${scanResult.totalReadinessMonitors}",
-                    isSuspicious = scanResult.incompleteReadinessMonitors >= 3,
+                    value = if (incMon != null && totMon != null && totMon > 0) "$incMon/$totMon" else notAvailableText,
+                    isSuspicious = incMon != null && incMon >= 3 && alertLevel == ClearedCodesAlertLevel.STRONG_WARNING,
                     modifier = Modifier.weight(1f)
                 )
             }
 
-            if (isFraud) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = when (language) {
-                        AppLanguage.AR -> "رغم أن عدد الأعطال الظاهرة هو 0، إلا أن كمبيوتر السيارة يخبرنا أنه تم مسح الذاكرة قبل ${scanResult.distanceSinceCodesClearedKm} كم فقط (${scanResult.warmupsSinceCodesCleared} دورة تسخين). لم تسر السيارة مسافة كافية لإعادة فحص الحساسات. يُنصح بقيادة السيارة لمدة 20-30 دقيقة وإعادة الفحص للتأكد من عدم عودة لمبة المحرك."
-                        AppLanguage.FR -> "Bien qu'aucun code confirmé ne s'affiche, le calculateur indique que la mémoire a été remise à zéro il y a seulement ${scanResult.distanceSinceCodesClearedKm} km (${scanResult.warmupsSinceCodesCleared} cycle). La voiture n'a pas assez roulé pour que d'éventuels défauts réapparaissent. Faites un essai routier de 20 à 30 minutes puis relancez le scan."
-                        AppLanguage.EN -> "Although 0 stored codes are shown, the ECU reports its memory was cleared only ${scanResult.distanceSinceCodesClearedKm} km ago (${scanResult.warmupsSinceCodesCleared} warmup cycle). The car has not been driven enough for hidden faults to reappear. Take a 20–30 minute test drive and scan again."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium,
-                    color = StatusErrorRedOnContainer,
-                    lineHeight = 19.sp
-                )
+            when (alertLevel) {
+                ClearedCodesAlertLevel.STRONG_WARNING -> {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    val distDescFr = if (distKm != null) "il y a $distKm km" else ""
+                    val warmDescFr = if (warmups != null) "($warmups cycle(s) de chauffe)" else ""
+                    val distDescAr = if (distKm != null) "قبل $distKm كم" else ""
+                    val warmDescAr = if (warmups != null) "($warmups دورة تسخين)" else ""
+                    val distDescEn = if (distKm != null) "$distKm km ago" else ""
+                    val warmDescEn = if (warmups != null) "($warmups warm-up cycle(s))" else ""
+
+                    Text(
+                        text = when (language) {
+                            AppLanguage.AR -> "أفاد كمبيوتر السيارة بأن ذاكرة الأعطال قد تم مسحها $distDescAr $warmDescAr (مثلاً بعد صيانة أو فصل البطارية). نظراً لأن السيارة لم تسر مسافة كافية لإعادة فحص جميع الحساسات، يُنصح بقيادتها لمدة 20 إلى 30 دقيقة ثم إعادة الفحص للتأكد من عدم ظهور أي كود عطل."
+                            AppLanguage.FR -> "Le calculateur indique une remise à zéro des codes défauts $distDescFr $warmDescFr (par exemple après un entretien ou une batterie débranchée). La voiture ayant peu roulé depuis, faites un essai routier de 20 à 30 minutes puis relancez le scan pour vérifier qu'aucun défaut ne réapparaît."
+                            AppLanguage.EN -> "The ECU reports that fault memory was reset $distDescEn $warmDescEn (for instance after maintenance or a battery disconnect). Because the car has only been driven a short distance since then, take a 20–30 minute test drive and scan again to make sure no fault codes return."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = contentColor,
+                        lineHeight = 19.sp
+                    )
+                }
+
+                ClearedCodesAlertLevel.CANNOT_RULE_OUT -> {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = when (language) {
+                            AppLanguage.AR -> "بعض اختبارات الفحص الذاتي ($incMon من $totMon) لم تكتمل بعد، بينما لا توفر هذه السيارة عداد المسافة منذ المسح. في السيارات الأقدم قد يكون هذا أمراً عادياً، لكن لا يمكن استبعاد مسح حديث للذاكرة أو فصل البطارية. يُفضل إجراء تجربة قيادة قبل الحسم."
+                            AppLanguage.FR -> "Plusieurs tests d'autodiagnostic ($incMon sur $totMon) sont incomplets et ce calculateur ne fournit pas la distance parcourue depuis la dernière remise à zéro. Sur les voitures anciennes, cela peut être normal, mais on ne peut pas exclure un effacement récent ou une batterie débranchée."
+                            AppLanguage.EN -> "Several self-test monitors ($incMon of $totMon) are incomplete and this car does not report distance or warm-ups since reset. On older cars this can happen normally, so a recent memory reset or battery disconnect cannot be ruled out."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = contentColor,
+                        lineHeight = 19.sp
+                    )
+                }
+
+                ClearedCodesAlertLevel.NOT_AVAILABLE -> {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = when (language) {
+                            AppLanguage.AR -> "لم يرسل كمبيوتر هذه السيارة عدادات المسافة أو دورات التسخين منذ آخر مسح. لا يدخل هذا العنصر في التقييم."
+                            AppLanguage.FR -> "Le calculateur de cette voiture ne communique pas les compteurs de distance ou de cycles depuis le dernier effacement. Cet élément n'est pas compté dans le score."
+                            AppLanguage.EN -> "This car's ECU does not provide distance or warm-up counters since the last reset. This leaves the score unaffected."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Slate700,
+                        lineHeight = 18.sp
+                    )
+                }
+
+                ClearedCodesAlertLevel.NONE_NORMAL -> Unit
             }
         }
     }
@@ -327,7 +436,7 @@ private fun FraudMetricPill(
         ) {
             Text(
                 text = value,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.ExtraBold,
                 color = if (isSuspicious) StatusErrorRed else Slate900
             )
@@ -342,7 +451,7 @@ private fun FraudMetricPill(
 
 @Composable
 private fun MilBulbTamperCard(
-    milCommandedOn: Boolean,
+    milCommandedOn: Boolean?,
     milBulbLitOnDashboard: Boolean,
     onMilBulbToggle: (Boolean) -> Unit,
     language: AppLanguage
@@ -372,15 +481,35 @@ private fun MilBulbTamperCard(
                     modifier = Modifier.weight(1f)
                 )
 
+                val badgeBg = when (milCommandedOn) {
+                    true -> StatusErrorRedContainer
+                    false -> StatusPassGreenContainer
+                    null -> Slate100
+                }
+                val badgeFg = when (milCommandedOn) {
+                    true -> StatusErrorRedOnContainer
+                    false -> StatusPassGreenOnContainer
+                    null -> Slate700
+                }
+                val badgeText = when (milCommandedOn) {
+                    true -> "ECU MIL: ON"
+                    false -> "ECU MIL: OFF"
+                    null -> when (language) {
+                        AppLanguage.AR -> "ECU MIL: غير متوفر"
+                        AppLanguage.FR -> "ECU MIL: Non dispo"
+                        AppLanguage.EN -> "ECU MIL: N/A"
+                    }
+                }
+
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = if (milCommandedOn) StatusErrorRedContainer else StatusPassGreenContainer
+                    color = badgeBg
                 ) {
                     Text(
-                        text = if (milCommandedOn) "ECU MIL: ON" else "ECU MIL: OFF",
+                        text = badgeText,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = if (milCommandedOn) StatusErrorRedOnContainer else StatusPassGreenOnContainer,
+                        color = badgeFg,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
@@ -457,9 +586,9 @@ private fun MilBulbTamperCard(
                 ) {
                     Text(
                         text = when (language) {
-                            AppLanguage.AR -> "حيلة شائعة جداً: عدم إضاءة لمبة المحرك عند وضع Contact يعني غالباً أنه تم نزع اللمبة (LED) أو تغطيتها بشريط لاصق أسود داخل العداد لإخفاء عطل دائم!"
-                            AppLanguage.FR -> "Attention : Si le voyant ne s'allume pas au contact, la LED du compteur a probablement été masquée avec du ruban adhésif ou dessoudée pour cacher un défaut moteur."
-                            AppLanguage.EN -> "Warning: If the check-engine light does not illuminate with ignition ON, the dashboard LED may have been covered with tape or disabled to hide a fault."
+                            AppLanguage.AR -> "تنبيه: عدم إضاءة لمبة المحرك عند وضع Contact قد يعني تعطل اللمبة أو تغطيتها داخل العداد لإخفاء عطل."
+                            AppLanguage.FR -> "Attention : Si le voyant ne s'allume pas au contact, l'ampoule/LED du compteur est peut-être hors service ou masquée."
+                            AppLanguage.EN -> "Warning: If the check-engine light does not illuminate with ignition ON, the dashboard bulb/LED may be faulty or covered."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
@@ -620,56 +749,193 @@ private fun DtcFaultListCard(
 @Composable
 private fun EcuVinComparisonCard(
     ecuVin: String,
-    expectedVin: String,
+    comparisonChoice: EcuVinComparisonChoice,
+    onComparisonChange: (EcuVinComparisonChoice) -> Unit,
     language: AppLanguage
 ) {
-    val hasExpected = expectedVin.length == 17
-    val matches = !hasExpected || ecuVin.equals(expectedVin, ignoreCase = true)
+    val isDifferent = comparisonChoice == EcuVinComparisonChoice.DIFFERENT
+    val isSame = comparisonChoice == EcuVinComparisonChoice.SAME
+
+    val borderColor = when (comparisonChoice) {
+        EcuVinComparisonChoice.DIFFERENT -> StatusErrorRed
+        EcuVinComparisonChoice.SAME -> StatusPassGreen
+        EcuVinComparisonChoice.COULD_NOT_COMPARE -> Emerald200
+    }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("obd_ecu_vin_card"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, if (matches) Emerald200 else StatusErrorRed)
+        border = BorderStroke(1.5.dp, borderColor)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = when (language) {
-                    AppLanguage.AR -> "رقم الشاسيه المخزن في كمبيوتر المحرك (Mode 09)"
-                    AppLanguage.FR -> "Numéro VIN lu dans le calculateur (Mode 09)"
-                    AppLanguage.EN -> "Electronic VIN Stored in Engine ECU (Mode 09)"
+                    AppLanguage.AR -> "رقم الشاسيه المقروء من كمبيوتر السيارة (Service 09 02)"
+                    AppLanguage.FR -> "Numéro de châssis lu dans le calculateur (Service 09 02)"
+                    AppLanguage.EN -> "Car's Chassis Number Read from ECU (Service 09 02)"
                 },
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = Slate900
             )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = ecuVin,
-                style = MaterialTheme.typography.bodyMedium,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = if (matches) Emerald800 else StatusErrorRed
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = if (matches) {
-                    when (language) {
-                        AppLanguage.AR -> "متطابق مع هوية السيارة والبطاقة الرمادية ✓"
-                        AppLanguage.FR -> "Cohérent avec le VIN physique et la carte grise ✓"
-                        AppLanguage.EN -> "Matches physical VIN and registration card ✓"
-                    }
-                } else {
-                    when (language) {
-                        AppLanguage.AR -> "تحذير: رقم الشاسيه في الكمبيوتر يختلف عن الرقم المدخل ($expectedVin)! قد يكون الكمبيوتر مستبدلاً."
-                        AppLanguage.FR -> "Attention : Le VIN du calculateur diffère du VIN saisi ($expectedVin) !"
-                        AppLanguage.EN -> "Warning: ECU VIN differs from entered VIN ($expectedVin)!"
-                    }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Large characters box so user never has to type a VIN
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = when {
+                    isDifferent -> StatusErrorRedContainer
+                    isSame -> StatusPassGreenContainer
+                    else -> Slate100
                 },
-                style = MaterialTheme.typography.labelSmall,
+                border = BorderStroke(1.dp, borderColor)
+            ) {
+                Text(
+                    text = ecuVin,
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontSize = 21.sp,
+                        letterSpacing = 1.8.sp
+                    ),
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.ExtraBold,
+                    textAlign = TextAlign.Center,
+                    color = when {
+                        isDifferent -> StatusErrorRedOnContainer
+                        isSame -> StatusPassGreenOnContainer
+                        else -> Slate900
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 14.dp, horizontal = 10.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = when (language) {
+                    AppLanguage.AR -> "قارن هذا الرقم مع البطاقة الرمادية"
+                    AppLanguage.FR -> "Comparez ce numéro avec la carte grise"
+                    AppLanguage.EN -> "Compare this with the carte grise"
+                },
+                style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (matches) StatusPassGreen else StatusErrorRed
+                color = Slate900
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 1. Same
+                val sameSelected = comparisonChoice == EcuVinComparisonChoice.SAME
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onComparisonChange(EcuVinComparisonChoice.SAME) }
+                        .testTag("ecu_vin_same_btn"),
+                    color = if (sameSelected) StatusPassGreen else Slate100,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = when (language) {
+                            AppLanguage.AR -> "متطابق"
+                            AppLanguage.FR -> "Identique"
+                            AppLanguage.EN -> "Same"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        color = if (sameSelected) Color.White else Slate700,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp, horizontal = 6.dp)
+                    )
+                }
+
+                // 2. Different (Critical finding)
+                val diffSelected = comparisonChoice == EcuVinComparisonChoice.DIFFERENT
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onComparisonChange(EcuVinComparisonChoice.DIFFERENT) }
+                        .testTag("ecu_vin_different_btn"),
+                    color = if (diffSelected) StatusErrorRed else Slate100,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = when (language) {
+                            AppLanguage.AR -> "مختلف"
+                            AppLanguage.FR -> "Différent"
+                            AppLanguage.EN -> "Different"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        color = if (diffSelected) Color.White else Slate700,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp, horizontal = 6.dp)
+                    )
+                }
+
+                // 3. Could not compare
+                val unknownSelected = comparisonChoice == EcuVinComparisonChoice.COULD_NOT_COMPARE
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onComparisonChange(EcuVinComparisonChoice.COULD_NOT_COMPARE) }
+                        .testTag("ecu_vin_could_not_compare_btn"),
+                    color = if (unknownSelected) Slate700 else Slate100,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = when (language) {
+                            AppLanguage.AR -> "تعذر المقارنة"
+                            AppLanguage.FR -> "Non comparé"
+                            AppLanguage.EN -> "Could not compare"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        color = if (unknownSelected) Color.White else Slate700,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp, horizontal = 6.dp)
+                    )
+                }
+            }
+
+            if (isDifferent) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = StatusErrorRedContainer
+                ) {
+                    Text(
+                        text = when (language) {
+                            AppLanguage.AR -> "ملاحظة حرجة: رقم الشاسيه المسجل داخل كمبيوتر المحرك يختلف عن البطاقة الرمادية! قد يكون كمبيوتر المحرك مستبدلاً من سيارة أخرى أو توجد مشكلة في هوية السيارة."
+                            AppLanguage.FR -> "Anomalie critique : Le numéro de châssis enregistré dans le calculateur diffère de la carte grise (calculateur remplacé ou identité non conforme)."
+                            AppLanguage.EN -> "Critical finding: The chassis number stored in the car's computer does not match the carte grise (replaced ECU or identity mismatch)."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = StatusErrorRedOnContainer,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -688,9 +954,9 @@ private fun LiveGaugesCard(
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = when (language) {
-                    AppLanguage.AR -> "الفحص الحي للمحرك (60 ثانية - المحرك دافئ في وضع Ralenti)"
-                    AppLanguage.FR -> "Contrôle moteur en direct (60s au ralenti moteur chaud)"
-                    AppLanguage.EN -> "60-Second Live Engine Health Check (Warm Idle)"
+                    AppLanguage.AR -> "القراءات الحية للمحرك والبطارية (المحرك دافئ في وضع Ralenti)"
+                    AppLanguage.FR -> "Mesures moteur & batterie en direct (au ralenti)"
+                    AppLanguage.EN -> "Live Engine & Battery Readings (Warm Idle)"
                 },
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
@@ -775,14 +1041,85 @@ private fun SecondaryEcuMileageInfoCard(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = when (language) {
-                    AppLanguage.AR -> "لا يوفر معيار OBD2 العالمي قراءة العداد في جميع السيارات، لذلك يعتمد التطبيق على مقارنة المسافة منذ آخر مسح للأعطال مع تآكل المقصورة وتاريخ البطاقة الرمادية. وحدات القراءة الخاصة من كمبيوتر ABS/علبة السرعة مهيأة برمجياً كإضافات مستقلة (أولها قابلية للتطبيق في الجزائر: مجموعة Renault/Dacia عبر CAN ومجموعة VW/Seat/Skoda عبر UDS)."
-                    AppLanguage.FR -> "Le standard OBD2 universel n'expose pas toujours le kilométrage du compteur. Fahs croise la distance parcourue depuis le dernier effacement avec l'usure physique (volant, pédales) et les documents. L'architecture modulaire prévoit en priorité les modules spécifiques Renault/Dacia (ABS CAN) et groupe VW/Seat/Skoda (UDS)."
-                    AppLanguage.EN -> "Standard OBD2 does not expose dashboard odometer values on all cars. Fahs cross-checks distance since last code clear with physical wear (pedals, steering wheel) and paperwork. Brand-specific secondary ECU modules are architected for Renault/Dacia (ABS CAN) and VW/Seat/Skoda (UDS) first."
+                    AppLanguage.AR -> "لا يوفر معيار OBD2 العالمي قراءة العداد في جميع السيارات، لذلك يعتمد التطبيق على مقارنة المسافة منذ آخر مسح للأعطال مع تآكل المقصورة وتاريخ البطاقة الرمادية."
+                    AppLanguage.FR -> "Le standard OBD2 universel n'expose pas toujours le kilométrage du compteur. Fahs croise la distance parcourue depuis le dernier effacement avec l'usure physique (volant, pédales) et les documents."
+                    AppLanguage.EN -> "Standard OBD2 does not expose dashboard odometer values on all cars. Fahs cross-checks distance since last code clear with physical wear (pedals, steering wheel) and paperwork."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = Slate700,
                 lineHeight = 18.sp
             )
+        }
+    }
+}
+
+@Composable
+private fun DeveloperRawExchangeLogCard(
+    exchangeCount: Int,
+    language: AppLanguage,
+    onExportRawLog: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("dev_export_raw_obd_log_card"),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Slate100),
+        border = BorderStroke(1.dp, Slate600)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Description,
+                    contentDescription = null,
+                    tint = Slate800,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = when (language) {
+                        AppLanguage.AR -> "[وضع المطورين] سجل التبادل الخام مع جهاز ELM327 ($exchangeCount أمر)"
+                        AppLanguage.FR -> "[Mode Développeur] Journal brut d'échange ELM327 ($exchangeCount commandes)"
+                        AppLanguage.EN -> "[Developer Mode] Raw ELM327 Exchange Log ($exchangeCount commands)"
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Slate900
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = when (language) {
+                    AppLanguage.AR -> "احفظ سجل الأوامر والردود الخام في ملف نصي (.txt) لإرساله عند فحص سيارة حقيقية."
+                    AppLanguage.FR -> "Enregistrez et partagez l'échange brut avec le boîtier dans un fichier texte (.txt) pour diagnostic."
+                    AppLanguage.EN -> "Save and share the raw command/reply exchange with the dongle as a .txt file for troubleshooting."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = Slate700
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onExportRawLog,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("dev_export_raw_obd_log_btn"),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = when (language) {
+                        AppLanguage.AR -> "حفظ ومشاركة ملف السجل الخام (.txt)"
+                        AppLanguage.FR -> "Enregistrer / Envoyer le fichier brut (.txt)"
+                        AppLanguage.EN -> "Save & Share Raw Exchange Log (.txt)"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
