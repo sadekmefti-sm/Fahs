@@ -409,12 +409,14 @@ fun BuyerTipsScreen(
                                     )
                                 }
 
-                                Text(
-                                    text = "${ReportEngine.formatDzd(dtc.minCostDzd)} – ${ReportEngine.formatDzd(dtc.maxCostDzd)}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Slate700
-                                )
+                                if (dtc.maxCostDzd > 0) {
+                                    Text(
+                                        text = "${ReportEngine.formatDzd(dtc.minCostDzd)} – ${ReportEngine.formatDzd(dtc.maxCostDzd)}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Slate700
+                                    )
+                                }
                             }
 
                             Text(

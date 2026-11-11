@@ -13,6 +13,8 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import androidx.core.content.FileProvider
 import com.example.core.i18n.AppLanguage
+import com.example.core.photo.InspectionPhotoHelper
+import com.example.data.model.ItemSeverity
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -143,22 +145,29 @@ object PdfReportGenerator {
 
         // 2. Overall Score & Verdict Box
         val verdictBoxPaint = when (report.verdict) {
+            "INCOMPLETE" -> boxBgPaint
             "GOOD" -> greenBoxPaint
             "NEGOTIATE" -> amberBoxPaint
             else -> redBoxPaint
         }
-        val verdictText = "${report.overallScore}/100 — ${report.getVerdictTitle(language)}"
+        val verdictText = if (report.overallScore != null) {
+            "${report.overallScore}/100 — ${report.getVerdictTitle(language)}"
+        } else {
+            report.getVerdictTitle(language)
+        }
         val summaryText = report.getVerdictSummary(language)
+        val estimatedSummaryLines = (summaryText.length / 72) + 2
+        val verdictBoxHeight = (46f + estimatedSummaryLines * 14f).coerceAtLeast(82f)
 
         canvas.drawRoundRect(
-            RectF(MARGIN_H, yPos, PAGE_WIDTH - MARGIN_H, yPos + 82f),
+            RectF(MARGIN_H, yPos, PAGE_WIDTH - MARGIN_H, yPos + verdictBoxHeight),
             10f,
             10f,
             verdictBoxPaint
         )
         drawMultilineText(canvas, verdictText, sectionTitlePaint, MARGIN_H + 14f, yPos + 10f, CONTENT_WIDTH - 28, alignment)
         drawMultilineText(canvas, summaryText, bodyPaint, MARGIN_H + 14f, yPos + 32f, CONTENT_WIDTH - 28, alignment)
-        yPos += 96f
+        yPos += verdictBoxHeight + 14f
 
         // 3. Identity, VIN & Repair Cost Summary Box
         val vinText = if (report.inspection.vin.isNotBlank()) report.inspection.vin else "Non renseigné / غير مدخل"
@@ -228,28 +237,44 @@ object PdfReportGenerator {
             yPos += 24f
         } else {
             for (item in allProblems) {
-                startNewPageIfNeeded(58f)
+                val photoBitmap = InspectionPhotoHelper.loadThumbnailBitmap(item.photoUri, maxDimensionPx = 240)
+                val neededHeight = if (photoBitmap != null) 136f else 58f
+                startNewPageIfNeeded(neededHeight)
                 val sevTag = item.severity.getLabel(language)
-                val costStr = "${ReportEngine.formatDzd(item.minCostDzd)} - ${ReportEngine.formatDzd(item.maxCostDzd)}"
-                val line1 = "• [$sevTag] ${item.getQuestion(language)} ($costStr)"
+                val costSuffix = if (item.maxCostDzd > 0) {
+                    " (${ReportEngine.formatDzd(item.minCostDzd)} - ${ReportEngine.formatDzd(item.maxCostDzd)})"
+                } else ""
+                val line1 = "• [$sevTag] ${item.getQuestion(language)}$costSuffix"
                 val line2 = "   ${item.getExplanation(language)}" +
                     if (item.buyerNote.isNotBlank()) " | Note: ${item.buyerNote}" else ""
 
                 val h1 = drawMultilineText(canvas, line1, bodyBoldPaint, MARGIN_H + 6f, yPos, CONTENT_WIDTH - 12, alignment)
                 yPos += h1 + 2f
                 val h2 = drawMultilineText(canvas, line2, bodyPaint, MARGIN_H + 12f, yPos, CONTENT_WIDTH - 24, alignment)
-                yPos += h2 + 8f
+                yPos += h2 + 4f
+
+                if (photoBitmap != null) {
+                    val targetHeight = 68f
+                    val aspect = photoBitmap.width.toFloat().coerceAtLeast(1f) / photoBitmap.height.toFloat().coerceAtLeast(1f)
+                    val targetWidth = (targetHeight * aspect).coerceIn(54f, 120f)
+                    val leftX = if (isRtl) (PAGE_WIDTH - MARGIN_H - 12f - targetWidth) else (MARGIN_H + 16f)
+                    val destRect = RectF(leftX, yPos, leftX + targetWidth, yPos + targetHeight)
+                    canvas.drawBitmap(photoBitmap, null, destRect, null)
+                    yPos += targetHeight + 6f
+                } else {
+                    yPos += 4f
+                }
             }
         }
 
         yPos += 8f
 
-        // 5. Unchecked Items Section (Honest disclosure)
+        // 5. Unchecked Items Section (Honest disclosure including all unchecked critical items)
         startNewPageIfNeeded(34f)
         val uncheckedHeader = when (language) {
-            AppLanguage.AR -> "2. نقاط لم يتم فحصها (${report.uncheckedItems.size})"
-            AppLanguage.FR -> "2. Points non vérifiés lors de la visite (${report.uncheckedItems.size})"
-            AppLanguage.EN -> "2. Items Not Checked During Visit (${report.uncheckedItems.size})"
+            AppLanguage.AR -> "2. نقاط لم يتم فحصها (${report.uncheckedItems.size} من أصل ${report.totalApplicableCount})"
+            AppLanguage.FR -> "2. Points non vérifiés lors de la visite (${report.uncheckedItems.size} sur ${report.totalApplicableCount})"
+            AppLanguage.EN -> "2. Items Not Checked During Visit (${report.uncheckedItems.size} of ${report.totalApplicableCount})"
         }
         drawMultilineText(canvas, uncheckedHeader, sectionTitlePaint, MARGIN_H, yPos, CONTENT_WIDTH, alignment)
         yPos += 20f
@@ -263,12 +288,17 @@ object PdfReportGenerator {
             drawMultilineText(canvas, allCheckedMsg, bodyPaint, MARGIN_H + 8f, yPos, CONTENT_WIDTH - 16, alignment)
             yPos += 22f
         } else {
-            for (item in report.uncheckedItems.take(12)) {
+            // Always list all unchecked CRITICAL items first, followed by other unchecked items
+            val orderedUnchecked = report.uncheckedCriticalItems +
+                report.uncheckedItems.filter { it.severity != ItemSeverity.CRITICAL }
+            for (item in orderedUnchecked) {
                 startNewPageIfNeeded(24f)
+                val prefix = if (item.severity == ItemSeverity.CRITICAL) "⚠️ [CRITIQUE]" else "○"
+                val paintToUse = if (item.severity == ItemSeverity.CRITICAL) redTextPaint else bodyPaint
                 val h = drawMultilineText(
                     canvas,
-                    "○ ${item.getSectionTitle(language)} : ${item.getQuestion(language)}",
-                    bodyPaint,
+                    "$prefix ${item.getSectionTitle(language)} : ${item.getQuestion(language)}",
+                    paintToUse,
                     MARGIN_H + 8f,
                     yPos,
                     CONTENT_WIDTH - 16,
@@ -337,10 +367,15 @@ object PdfReportGenerator {
             AppLanguage.EN -> "Share Vehicle Inspection PDF Report"
         }
 
+        val scoreLabel = report.overallScore?.let { "$it/100" } ?: when (language) {
+            AppLanguage.AR -> "غير مكتمل"
+            AppLanguage.FR -> "Incomplet"
+            AppLanguage.EN -> "Incomplete"
+        }
         val shareText = when (language) {
-            AppLanguage.AR -> "تقرير فحص سيارة ${report.inspection.carBrand} ${report.inspection.carModel} (${report.inspection.carYear}) — النتيجة: ${report.overallScore}/100 (${report.getVerdictTitle(language)})"
-            AppLanguage.FR -> "Rapport d'inspection Fahs : ${report.inspection.carBrand} ${report.inspection.carModel} (${report.inspection.carYear}) — Score : ${report.overallScore}/100 (${report.getVerdictTitle(language)})"
-            AppLanguage.EN -> "Fahs Inspection Report: ${report.inspection.carBrand} ${report.inspection.carModel} (${report.inspection.carYear}) — Score: ${report.overallScore}/100 (${report.getVerdictTitle(language)})"
+            AppLanguage.AR -> "تقرير فحص سيارة ${report.inspection.carBrand} ${report.inspection.carModel} (${report.inspection.carYear}) — النتيجة: $scoreLabel (${report.getVerdictTitle(language)})"
+            AppLanguage.FR -> "Rapport d'inspection Fahs : ${report.inspection.carBrand} ${report.inspection.carModel} (${report.inspection.carYear}) — Score : $scoreLabel (${report.getVerdictTitle(language)})"
+            AppLanguage.EN -> "Fahs Inspection Report: ${report.inspection.carBrand} ${report.inspection.carModel} (${report.inspection.carYear}) — Score: $scoreLabel (${report.getVerdictTitle(language)})"
         }
 
         val shareIntent = Intent(Intent.ACTION_SEND).apply {

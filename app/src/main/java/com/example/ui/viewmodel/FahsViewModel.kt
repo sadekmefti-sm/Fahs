@@ -11,6 +11,8 @@ import com.example.data.local.InspectionEntity
 import com.example.data.model.ChecklistItemDefinition
 import com.example.data.repository.CloudBackupRepository
 import com.example.data.repository.InspectionRepository
+import com.example.data.repository.ShopSettings
+import com.example.data.repository.ShopSettingsRepository
 import com.example.domain.ChecklistEngine
 import com.example.domain.ObdScanResult
 import com.google.firebase.auth.FirebaseAuth
@@ -44,11 +46,18 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
     private val cloudBackupRepository: CloudBackupRepository by lazy {
         CloudBackupRepository(getApplication())
     }
+    private val shopSettingsRepository: ShopSettingsRepository = ShopSettingsRepository(application)
+    val shopSettings: StateFlow<ShopSettings> = shopSettingsRepository.settings
 
     private val _currentLanguage = MutableStateFlow(
         LanguagePreferences.getInitialLanguage(application)
     )
     val currentLanguage: StateFlow<AppLanguage> = _currentLanguage.asStateFlow()
+
+    private val _isDeveloperModeEnabled = MutableStateFlow(
+        LanguagePreferences.isDeveloperModeEnabled(application)
+    )
+    val isDeveloperModeEnabled: StateFlow<Boolean> = _isDeveloperModeEnabled.asStateFlow()
 
     private val _selectedTab = MutableStateFlow(NavTab.HOME)
     val selectedTab: StateFlow<NavTab> = _selectedTab.asStateFlow()
@@ -111,6 +120,14 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         refreshAuthState()
+        viewModelScope.launch {
+            shopSettingsRepository.refreshFromFirestore()
+        }
+    }
+
+    fun setDeveloperModeEnabled(enabled: Boolean) {
+        _isDeveloperModeEnabled.value = enabled
+        LanguagePreferences.setDeveloperModeEnabled(getApplication(), enabled)
     }
 
     fun refreshAuthState() {
@@ -250,6 +267,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun seedSampleComparisonInspections(onSeeded: () -> Unit = {}) {
+        if (!_isDeveloperModeEnabled.value) return
         viewModelScope.launch {
             val sample1 = InspectionEntity(
                 carBrand = "Renault",
@@ -266,7 +284,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 verdict = "GOOD",
                 status = "COMPLETED",
                 totalEstimatedCostDzd = 22000,
-                notes = "Première main, carnet d'entretien à jour, éprouvette GPL valide. Pneus avant à prévoir.",
+                notes = "[DEV DEMO] Première main, carnet d'entretien à jour, éprouvette GPL valide. Pneus avant à prévoir.",
                 totalQuestions = 26,
                 answeredQuestions = 26,
                 problemCount = 1
@@ -286,7 +304,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 verdict = "NEGOTIATE",
                 status = "COMPLETED",
                 totalEstimatedCostDzd = 95000,
-                notes = "[OBD2 Scan: P0420 (STORED) | ALERTE: Mémoire effacée il y a 12 km] Embrayage haut et suintement turbo.",
+                notes = "[DEV DEMO] [OBD2 Scan: P0420 (STORED) | ALERTE: Mémoire effacée il y a 12 km] Embrayage haut et suintement turbo.",
                 totalQuestions = 27,
                 answeredQuestions = 27,
                 problemCount = 4
@@ -466,13 +484,13 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun finishActiveInspection(score: Int, verdict: String, totalRepairDzd: Int) {
+    fun finishActiveInspection(score: Int?, verdict: String, totalRepairDzd: Int) {
         val inspectionId = _activeInspectionId.value ?: return
         viewModelScope.launch {
             val current = repository.getInspection(inspectionId) ?: return@launch
             repository.updateInspection(
                 current.copy(
-                    status = "COMPLETED",
+                    status = if (score != null) "COMPLETED" else "IN_PROGRESS",
                     overallScore = score,
                     verdict = verdict,
                     totalEstimatedCostDzd = totalRepairDzd,
@@ -491,6 +509,9 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
         milBulbLitOnDashboard: Boolean,
         returnToChecklist: Boolean = true
     ) {
+        // Hard block: a simulated result must never be saved into an inspection
+        if (scanResult.isSimulated) return
+
         _lastObdScanResult.value = scanResult
         val inspectionId = _activeInspectionId.value ?: return
         viewModelScope.launch {
@@ -502,9 +523,8 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 scanResult.isRecentlyClearedFraudAlert ||
                 isMilTampered
 
-            val obdCostDzd = scanResult.dtcList.sumOf { it.getAverageCostDzd() } +
-                (if (isMilTampered) 25000 else 0) +
-                (if (scanResult.isRecentlyClearedFraudAlert) 35000 else 0)
+            // Only sum sourced fault-code repair costs; never add fixed 25,000 / 35,000 DZD amounts
+            val obdCostDzd = scanResult.dtcList.sumOf { it.getAverageCostDzd() }
 
             val dtcCodesSummary = if (scanResult.dtcList.isEmpty()) {
                 "0 DTC"
@@ -516,7 +536,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 append("[OBD2 Scan: $dtcCodesSummary")
                 if (scanResult.isRecentlyClearedFraudAlert) {
                     append(" | ALERTE: Mémoire effacée il y a ${scanResult.distanceSinceCodesClearedKm} km (${scanResult.warmupsSinceCodesCleared} cycles)")
-                } else {
+                } else if (scanResult.distanceSinceCodesClearedKm >= 0) {
                     append(" | Effacé il y a ${scanResult.distanceSinceCodesClearedKm} km")
                 }
                 if (isMilTampered) {

@@ -235,10 +235,14 @@ fun FirstLaunchWelcomeCard(
 fun OnboardingAndReleaseDialog(
     language: AppLanguage,
     initialSection: String = "TUTORIAL", // TUTORIAL, DONGLE_GUIDE, PRIVACY
+    shopSettings: com.example.data.repository.ShopSettings = com.example.data.repository.ShopSettings(),
+    isDeveloperModeEnabled: Boolean = false,
+    onToggleDeveloperMode: (Boolean) -> Unit = {},
     onSelectLanguage: (AppLanguage) -> Unit,
     onDismiss: () -> Unit
 ) {
     var activeSection by remember(initialSection) { mutableStateOf(initialSection) }
+    var versionTapCount by remember { mutableStateOf(0) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -262,7 +266,7 @@ fun OnboardingAndReleaseDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
@@ -290,9 +294,24 @@ fun OnboardingAndReleaseDialog(
                                 color = Color.White
                             )
                             Text(
-                                text = "Version 1.0 • Android 8.0+ • 100% Offline-First",
+                                text = buildString {
+                                    append("Version 1.0 • Android 8.0+ • 100% Offline-First")
+                                    if (isDeveloperModeEnabled) {
+                                        append(" • [DEV MODE ON]")
+                                    }
+                                },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Emerald100
+                                color = Emerald100,
+                                modifier = Modifier
+                                    .clickable {
+                                        versionTapCount += 1
+                                        if (versionTapCount >= 7) {
+                                            versionTapCount = 0
+                                            onToggleDeveloperMode(!isDeveloperModeEnabled)
+                                        }
+                                    }
+                                    .padding(vertical = 2.dp)
+                                    .testTag("about_version_tap_target")
                             )
                         }
                     }
@@ -418,8 +437,15 @@ fun OnboardingAndReleaseDialog(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     when (activeSection) {
-                        "DONGLE_GUIDE" -> DongleBuyingGuideContent(language)
-                        "PRIVACY" -> PrivacyAndReleaseInfoContent(language)
+                        "DONGLE_GUIDE" -> DongleBuyingGuideContent(language, shopSettings)
+                        "PRIVACY" -> PrivacyAndReleaseInfoContent(
+                            language = language,
+                            shopSettings = shopSettings,
+                            isDeveloperModeEnabled = isDeveloperModeEnabled,
+                            onVersionTappedSevenTimes = {
+                                onToggleDeveloperMode(!isDeveloperModeEnabled)
+                            }
+                        )
                         else -> TutorialWalkthroughContent(language)
                     }
                 }
@@ -468,9 +494,9 @@ private fun TutorialWalkthroughContent(language: AppLanguage) {
             AppLanguage.EN -> "Step 1: Choose the Car & Verify Algerian Documents"
         },
         body = when (language) {
-            AppLanguage.AR -> "اختر ماركة وموديل السيارة ونوع الوقود (بنزين، ديزل، سيرغاز GPL). بعدها صور أو أدخل رقم الشاسيه (VIN) ورقم الترقيم (الولاية 01-58) للتأكد من تطابق الحفر على الهيكل مع البطاقة الرمادية الأصلية وعدم وجود عائق بيع مثل رخصة المجاهدين."
-            AppLanguage.FR -> "Sélectionnez la marque, le modèle, le carburant (Essence, Diesel, GPL) et la boîte. Scannez ensuite le numéro de châssis (VIN) et le matricule (Wilaya 01-58) pour vérifier la cohérence avec la carte grise originale et l'absence de blocage (licence moudjahid, gage)."
-            AppLanguage.EN -> "Pick the brand, model, fuel (Petrol, Diesel, LPG/GPL), and gearbox. Scan or enter the 17-character VIN and Algerian Wilaya plate (01-58) to confirm consistency with the original registration card."
+            AppLanguage.AR -> "اختر ماركة وموديل السيارة ونوع الوقود (بنزين، ديزل، سيرغاز GPL). بعدها تحقق من تطابق رقم الشاسيه المحفور على الهيكل مع البطاقة الرمادية الأصلية وعدم وجود عائق بيع."
+            AppLanguage.FR -> "Sélectionnez la marque, le modèle, le carburant (Essence, Diesel, GPL) et la boîte. Vérifiez ensuite que le numéro de châssis frappé sur la voiture correspond à la carte grise originale."
+            AppLanguage.EN -> "Pick the brand, model, fuel (Petrol, Diesel, LPG/GPL), and gearbox. Then verify that the chassis number stamped on the car matches the original registration card."
         }
     )
 
@@ -483,7 +509,7 @@ private fun TutorialWalkthroughContent(language: AppLanguage) {
             AppLanguage.EN -> "Step 2: Guided Walkaround Checklist (Auto-Saved)"
         },
         body = when (language) {
-            AppLanguage.AR -> "يعرض لك التطبيق سؤالاً واحداً واضحاً في كل شاشة حسب ترتيب دورانك حول السيارة: الهيكل والصبيغة، تحت الغطاء والمحرك بارد، المقصورة، أسفل السيارة، تشغيل المحرك، والقيادة التجريبية. اضغط «كيف أفحص هذا؟» لرؤية الشرح المبسط، والتقط صوراً لأي عيب."
+            AppLanguage.AR -> "يعرض لك التطبيق سؤالاً واحداً واضحاً في كل شاشة حسب ترتيب دورانك حول السيارة: الهيكل والصبيغة، تحت الغطاء والمحرك بارد، المقصورة، أسفل السيارة، تشغيل المحرك، والقيادة التجريبية. اضغط «كيف أفحص هذا؟» لرؤية الشرح المبسط، والتقط صوراً بالكاميرا لأي عيب."
             AppLanguage.FR -> "Une seule question simple par écran dans l'ordre naturel autour de la voiture : carrosserie, longerons sous le capot à froid, habitacle, soubassement, démarrage et essai routier. Appuyez sur « Comment vérifier ? » en cas de doute. Tout est sauvegardé automatiquement après chaque réponse."
             AppLanguage.EN -> "One clear question per screen in natural walkaround order: exterior paint/gaps, cold engine bay & chassis legs, interior wear, suspension, cold start smoke, and test drive. Every answer is saved automatically."
         }
@@ -495,12 +521,12 @@ private fun TutorialWalkthroughContent(language: AppLanguage) {
         title = when (language) {
             AppLanguage.AR -> "الخطوة 3: فحص كمبيوتر السيارة OBD2 وكشف مسح الأكواد"
             AppLanguage.FR -> "Étape 3 : Scan OBD2 & Détection des codes effacés"
-            AppLanguage.EN -> "Step 3: OBD2 Scan & Cleared-Codes Fraud Detection"
+            AppLanguage.EN -> "Step 3: OBD2 Scan & Cleared-Codes Detection"
         },
         body = when (language) {
-            AppLanguage.AR -> "اربط هاتفك بفيشة البلوتوث ELM327 لقراءة أعطال المحرك وكشف ما إذا قام البائع بمسح ذاكرة الكمبيوتر وإطفاء لمبة Check Engine قبل ساعات من اللقاء! يمكنك أيضاً تجربة المحاكي المدمج بدون فيشة."
-            AppLanguage.FR -> "Connectez un petit boîtier Bluetooth ELM327 pour lire les défauts du calculateur et détecter si le vendeur a effacé la mémoire juste avant la visite (kilométrage parcouru depuis le dernier effacement)."
-            AppLanguage.EN -> "Connect a Bluetooth ELM327 dongle to read stored/pending faults and check if the seller erased fault memory right before meeting you (distance traveled since codes cleared)."
+            AppLanguage.AR -> "اربط هاتفك بفيشة البلوتوث ELM327 لقراءة أعطال المحرك وكشف ما إذا تم مسح ذاكرة الكمبيوتر مؤخراً قبل اللقاء (المسافة المقطوعة وعدد مرات التسخين منذ آخر مسح)."
+            AppLanguage.FR -> "Connectez un petit boîtier Bluetooth ELM327 pour lire les défauts du calculateur et vérifier si la mémoire a été effacée récemment (kilométrage parcouru et cycles de chauffe depuis le dernier effacement)."
+            AppLanguage.EN -> "Connect a Bluetooth ELM327 dongle to read stored/pending faults and check if fault memory was erased recently (distance traveled and warm-up cycles since codes were cleared)."
         }
     )
 
@@ -513,15 +539,25 @@ private fun TutorialWalkthroughContent(language: AppLanguage) {
             AppLanguage.EN -> "Step 4: Score /100, Negotiation in Centimes & PDF Report"
         },
         body = when (language) {
-            AppLanguage.AR -> "في النهاية تحصل على تقييم من 100، مع حساب تكلفة الإصلاحات بالدينار وبالمليون سنتيم لتعرف السعر العادل للشراء، وإمكانية مشاركة التقرير كملف PDF عبر واتساب أو مقارنة 3 سيارات جنباً إلى جنب."
-            AppLanguage.FR -> "Obtenez un score sur 100, le total des frais à prévoir en DZD et en Millions de centimes pour négocier sereinement, exportez le rapport complet en PDF (Français, Arabe, Anglais) et comparez jusqu'à 3 voitures côte à côte."
-            AppLanguage.EN -> "Get an objective 0–100 score, total estimated repairs in DZD and Millions de centimes to negotiate fairly, export a shareable PDF report, and compare 2–3 cars side by side."
+            AppLanguage.AR -> "بعد الإجابة على النقاط الحرجة ونسبة كافية من الفحص، تحصل على تقييم من 100 مع توضيح أي نقاط لم تُفحص، وحساب تكلفة الإصلاحات بالدينار وبالمليون سنتيم، ومشاركة التقرير كملف PDF مع الصور."
+            AppLanguage.FR -> "Une fois les points critiques et un nombre suffisant de questions vérifiés, obtenez un score sur 100 avec le détail des points non vérifiés, le total des frais en DZD et en Millions de centimes, et exportez le rapport complet en PDF avec photos."
+            AppLanguage.EN -> "Once all critical items and enough checklist items are answered, get a 0–100 score showing any unchecked items, estimated repairs in DZD and Millions de centimes, and export a PDF report with photos."
         }
     )
 }
 
 @Composable
-private fun DongleBuyingGuideContent(language: AppLanguage) {
+private fun DongleBuyingGuideContent(
+    language: AppLanguage,
+    shopSettings: com.example.data.repository.ShopSettings
+) {
+    val priceFormatted = shopSettings.formattedDonglePrice()
+    val stockStatusText = when (language) {
+        AppLanguage.AR -> if (shopSettings.inStock) "متوفر حالياً للطلب" else "غير متوفر مؤقتاً"
+        AppLanguage.FR -> if (shopSettings.inStock) "En stock actuellement" else "Rupture de stock temporaire"
+        AppLanguage.EN -> if (shopSettings.inStock) "Currently in stock" else "Temporarily out of stock"
+    }
+
     InfoStepCard(
         icon = Icons.Default.ShoppingBag,
         badgeColor = Emerald700,
@@ -531,9 +567,9 @@ private fun DongleBuyingGuideContent(language: AppLanguage) {
             AppLanguage.EN -> "Which ELM327 Dongle Should You Buy in Algeria?"
         },
         body = when (language) {
-            AppLanguage.AR -> "• النوع الموصى به: اطلب فيشة «ELM327 Bluetooth V1.5» (ذات الشريحة الأصلية PIC18F25K80) أو ماركة Vgate iCar2 / Konnwei KW902.\n• تجنب النسخ الرخيصة جداً المكتوب عليها V2.1 الزرقاء الشفافة لأنها أحياناً لا تقرأ سيارات رونو وبيجو القديمة (قبل 2012).\n• السعر في الجزائر: تتراوح بين 1500 دج و 3500 دج (15 إلى 35 ألف سنتيم) في محلات إكسسوارات السيارات (الحميز، سطيف، وهران، قسنطينة) أو على واد كنيس (Ouedkniss)."
-            AppLanguage.FR -> "• Modèle recommandé : privilégiez un boîtier « ELM327 Bluetooth Classique Version 1.5 » (puce PIC18F25K80) ou un Vgate iCar2 / Konnwei KW902.\n• Pourquoi V1.5 plutôt que V2.1 ? Les clones V1.5 lisent beaucoup mieux les Renault Symbol/Clio et Peugeot 207/208/301 vendues en Algérie.\n• Prix et où l'acheter : entre 1 500 DZD et 3 500 DZD (150 à 350 mille centimes) sur Ouedkniss, à El Hamiz (Alger), Aïn Fakroun / El Eulma ou chez les vendeurs d'accessoires auto."
-            AppLanguage.EN -> "• Recommended model: look for 'ELM327 Bluetooth Classic V1.5' (PIC18F25K80 chip) or Vgate iCar2 / Konnwei KW902.\n• Why V1.5 over V2.1? V1.5 adapters have much higher compatibility with older French and Asian cars in Algeria.\n• Price in Algeria: typically 1,500 DZD to 3,500 DZD on Ouedkniss, El Hamiz (Algiers), or local auto parts shops."
+            AppLanguage.AR -> "• النوع الموصى به: فيشة «ELM327 Bluetooth V1.5» (ذات الشريحة الأصلية PIC18F25K80) أو Vgate iCar2 / Konnwei KW902.\n• السعر المبدئي للفيشة: $priceFormatted ($stockStatusText).\n• التوصيل متاح لجميع الولايات (58 ولاية) إلى المنزل أو مكتب التوصيل (Stop Desk).\n• للطلب أو الاستفسار عبر واتساب: ${shopSettings.whatsappNumber}"
+            AppLanguage.FR -> "• Modèle recommandé : privilégiez un boîtier « ELM327 Bluetooth Classique Version 1.5 » (puce PIC18F25K80) ou un Vgate iCar2 / Konnwei KW902.\n• Prix du boîtier : à partir de $priceFormatted ($stockStatusText).\n• Livraison disponible dans les 58 wilayas (à domicile ou en bureau Stop Desk).\n• Contact WhatsApp : ${shopSettings.whatsappNumber}"
+            AppLanguage.EN -> "• Recommended model: 'ELM327 Bluetooth Classic V1.5' (PIC18F25K80 chip) or Vgate iCar2 / Konnwei KW902.\n• Starting price: $priceFormatted ($stockStatusText).\n• Delivery available across all 58 wilayas (home delivery or stop desk).\n• WhatsApp contact: ${shopSettings.whatsappNumber}"
         }
     )
 
@@ -546,27 +582,34 @@ private fun DongleBuyingGuideContent(language: AppLanguage) {
             AppLanguage.EN -> "How to Pair the Dongle in 30 Seconds"
         },
         body = when (language) {
-            AppLanguage.AR -> "1. والمحرك متوقف، ركب الفيشة في منفذ OBD2 للسيارة (تجد مكانه بالصور والوصف داخل التطبيق لكل سيارة).\n2. افتح الكونتاكت (تضيء لمبات الطابلوه) أو شغل المحرك.\n3. افتح إعدادات البلوتوث في هاتفك، ابحث عن جهاز باسم «OBDII» أو «V-LINK»، وأدخل كود الاقتران: 1234 أو 0000.\n4. افتح تطبيق فحص واضغط «اتصال بفيشة البلوتوث»."
-            AppLanguage.FR -> "1. Contact coupé, branchez le boîtier sur la prise OBD2 de la voiture (l'emplacement exact est indiqué dans Fahs pour les 28 modèles).\n2. Mettez le contact (voyants du tableau de bord allumés) ou démarrez le moteur.\n3. Dans les paramètres Bluetooth de votre téléphone Android, associez l'appareil « OBDII » ou « V-LINK » avec le code PIN 1234 ou 0000.\n4. Revenez dans Fahs et lancez le scan."
+            AppLanguage.AR -> "1. والمحرك متوقف، ركب الفيشة في منفذ OBD2 للسيارة (تجد مكانه بالوصف داخل التطبيق لكل سيارة).\n2. افتح الكونتاكت (تضيء لمبات الطابلوه) أو شغل المحرك.\n3. افتح إعدادات البلوتوث في هاتفك، ابحث عن جهاز باسم «OBDII» أو «V-LINK»، وأدخل كود الاقتران: 1234 أو 0000.\n4. افتح تطبيق فحص واضغط «اتصال بفيشة البلوتوث»."
+            AppLanguage.FR -> "1. Contact coupé, branchez le boîtier sur la prise OBD2 de la voiture (l'emplacement exact est indiqué dans Fahs pour chaque modèle).\n2. Mettez le contact (voyants du tableau de bord allumés) ou démarrez le moteur.\n3. Dans les paramètres Bluetooth de votre téléphone Android, associez l'appareil « OBDII » ou « V-LINK » avec le code PIN 1234 ou 0000.\n4. Revenez dans Fahs et lancez le scan."
             AppLanguage.EN -> "1. With ignition off, plug the adapter into the car's 16-pin OBD2 port (Fahs shows the exact location for each model).\n2. Turn the key to Ignition ON (dashboard lights lit).\n3. In Android Bluetooth settings, pair with 'OBDII' or 'V-LINK' using PIN 1234 or 0000.\n4. Return to Fahs and tap Connect & Scan."
         }
     )
 }
 
 @Composable
-private fun PrivacyAndReleaseInfoContent(language: AppLanguage) {
+private fun PrivacyAndReleaseInfoContent(
+    language: AppLanguage,
+    shopSettings: com.example.data.repository.ShopSettings,
+    isDeveloperModeEnabled: Boolean,
+    onVersionTappedSevenTimes: () -> Unit
+) {
+    var tapCounter by remember { mutableStateOf(0) }
+
     InfoStepCard(
         icon = Icons.Default.PrivacyTip,
         badgeColor = Emerald700,
         title = when (language) {
-            AppLanguage.AR -> "سياسة الخصوصية: بياناتك ملكك وحدك (100% بدون إعلانات)"
-            AppLanguage.FR -> "Politique de Confidentialité : 100% Privé & Sans Publicité"
-            AppLanguage.EN -> "Privacy Policy: 100% Private, Offline-First & Ad-Free"
+            AppLanguage.AR -> "سياسة الخصوصية والتواصل: بياناتك ملكك وحدك"
+            AppLanguage.FR -> "Politique de Confidentialité & Contact : 100% Privé"
+            AppLanguage.EN -> "Privacy Policy & Contact: 100% Private"
         },
         body = when (language) {
-            AppLanguage.AR -> "• التخزين المحلي أولاً: جميع الفحوصات، الصور، أرقام الشاسيه والملاحظات تحفظ داخل هاتفك فقط ولا تغادره أبداً بدون إذنك.\n• استخدام الكاميرا: تُستخدم الكاميرا حصرياً لقراءة رقم الشاسيه (VIN) على الهاتف أو تصوير ملاحظات الفحص لإدراجها في تقرير PDF.\n• استخدام البلوتوث: يُستخدم حصرياً للاتصال بفيشة الفحص ELM327 OBD2.\n• النسخ الاحتياطي الاختياري: فقط في حال اخترت تسجيل الدخول بحساب Google والضغط على «حفظ سحابي»، يتم حفظ ملخصات الفحص في مساحتك الخاصة المشفرة على Firebase Firestore."
-            AppLanguage.FR -> "• Stockage local par défaut : Toutes vos inspections, photos, numéros VIN et notes sont enregistrés uniquement sur votre téléphone.\n• Caméra : Utilisée exclusivement sur l'appareil pour scanner le VIN et photographier les défauts pour votre rapport PDF.\n• Bluetooth : Utilisé exclusivement pour communiquer avec votre boîtier ELM327 OBD2.\n• Sauvegarde Cloud optionnelle : Uniquement si vous choisissez de vous connecter avec Google et cliquez sur « Sauvegarder », vos inspections sont copiées dans votre espace privé sécurisé Cloud Firestore.\n• Zéro publicité, zéro revente de données."
-            AppLanguage.EN -> "• Offline Local Storage First: All your inspections, photos, VINs, and notes are stored strictly on your phone by default.\n• Camera Permission: Used exclusively on-device to scan VIN characters and attach defect photos to your PDF report.\n• Bluetooth Permission: Used exclusively to communicate with your ELM327 OBD2 dongle.\n• Optional Cloud Backup: Only if you explicitly sign in with Google and tap 'Back Up' are your inspection summaries saved to your private Cloud Firestore space.\n• Zero ads, zero third-party tracking."
+            AppLanguage.AR -> "• التخزين المحلي أولاً: جميع الفحوصات، الصور، والملاحظات تحفظ داخل هاتفك فقط ولا تغادره أبداً بدون إذنك.\n• استخدام الكاميرا: تُستخدم الكاميرا حصرياً لتصوير ملاحظات وعيوب الفحص لإدراجها في تقرير PDF.\n• استخدام البلوتوث: يُستخدم حصرياً للاتصال بفيشة الفحص ELM327 OBD2.\n• النسخ الاحتياطي الاختياري: فقط في حال اخترت تسجيل الدخول بحساب Google والضغط على «حفظ سحابي»، يتم حفظ ملخصات الفحص في مساحتك الخاصة على Firebase Firestore.\n• البريد الإلكتروني للتواصل: ${shopSettings.contactEmail}\n• واتساب: ${shopSettings.whatsappNumber}"
+            AppLanguage.FR -> "• Stockage local par défaut : Toutes vos inspections, photos et notes sont enregistrées uniquement sur votre téléphone.\n• Caméra : Utilisée exclusivement pour photographier les défauts observés et les joindre à votre rapport PDF.\n• Bluetooth : Utilisé exclusivement pour communiquer avec votre boîtier ELM327 OBD2.\n• Sauvegarde Cloud optionnelle : Uniquement si vous choisissez de vous connecter avec Google et cliquez sur « Sauvegarder », vos inspections sont copiées dans votre espace privé Cloud Firestore.\n• Email de contact : ${shopSettings.contactEmail}\n• WhatsApp : ${shopSettings.whatsappNumber}"
+            AppLanguage.EN -> "• Offline Local Storage First: All your inspections, photos, and notes are stored strictly on your phone by default.\n• Camera Permission: Used exclusively to photograph inspection findings and attach them to your PDF report.\n• Bluetooth Permission: Used exclusively to communicate with your ELM327 OBD2 dongle.\n• Optional Cloud Backup: Only if you explicitly sign in with Google and tap 'Back Up' are your inspection summaries saved to your private Cloud Firestore space.\n• Contact Email: ${shopSettings.contactEmail}\n• WhatsApp: ${shopSettings.whatsappNumber}"
         }
     )
 
@@ -584,6 +627,46 @@ private fun PrivacyAndReleaseInfoContent(language: AppLanguage) {
             AppLanguage.EN -> "Fahs acts as the knowledgeable friend standing next to you during an inspection. If critical signs appear on the chassis rails, engine internals, or automatic gearbox, always have a trusted mechanic confirm on a lift before paying."
         }
     )
+
+    // Version card in About/Privacy tab (7 taps toggles Developer Mode)
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = if (isDeveloperModeEnabled) Emerald100 else Slate100,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                tapCounter += 1
+                if (tapCounter >= 7) {
+                    tapCounter = 0
+                    onVersionTappedSevenTimes()
+                }
+            }
+            .testTag("privacy_version_card")
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = if (isDeveloperModeEnabled) {
+                    when (language) {
+                        AppLanguage.AR -> "إصدار التطبيق 1.0 • وضع المطور مفعّل (اضغط 7 مرات لإيقافه)"
+                        AppLanguage.FR -> "Version 1.0 • Mode Développeur ACTIVÉ (7 appuis pour désactiver)"
+                        AppLanguage.EN -> "Version 1.0 • Developer Mode ENABLED (7 taps to disable)"
+                    }
+                } else {
+                    when (language) {
+                        AppLanguage.AR -> "إصدار التطبيق 1.0 (Fahs DZ)"
+                        AppLanguage.FR -> "Version de l'application 1.0 (Fahs DZ)"
+                        AppLanguage.EN -> "Application Version 1.0 (Fahs DZ)"
+                    }
+                },
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (isDeveloperModeEnabled) Emerald900 else Slate700
+            )
+        }
+    }
 }
 
 @Composable

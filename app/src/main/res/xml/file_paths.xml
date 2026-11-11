@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path
-        name="shared_reports"
+        name="reports"
         path="reports/" />
+    <cache-path
+        name="camera_temp"
+        path="camera_temp/" />
     <files-path
-        name="internal_reports"
-        path="reports/" />
+        name="inspection_photos"
+        path="inspection_photos/" />
 </paths>

@@ -56,9 +56,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -67,6 +71,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.i18n.AppLanguage
+import com.example.core.photo.InspectionPhotoHelper
 import com.example.data.local.ChecklistAnswerEntity
 import com.example.data.local.InspectionEntity
 import com.example.data.model.ItemSeverity
@@ -117,7 +122,7 @@ fun InspectionReportScreen(
         ReportEngine.buildReport(inspection, savedAnswers)
     }
 
-    var askingPriceMillionsInput by remember { mutableStateOf("235") }
+    var askingPriceMillionsInput by remember { mutableStateOf("") }
     val askingMillions = askingPriceMillionsInput.toDoubleOrNull() ?: 0.0
 
     var showPassedItems by remember { mutableStateOf(false) }
@@ -392,30 +397,66 @@ fun InspectionReportScreen(
                             if (report.uncheckedItems.isEmpty()) {
                                 Text(
                                     text = when (language) {
-                                        AppLanguage.AR -> "تم فحص جميع النقاط المبرمجة للسيارة بنسبة 100% ✓"
-                                        AppLanguage.FR -> "Tous les points prévus ont été vérifiés (100% de couverture) ✓"
-                                        AppLanguage.EN -> "All scheduled items were verified (100% coverage) ✓"
+                                        AppLanguage.AR -> "تم فحص جميع النقاط المبرمجة للسيارة بنسبة 100% (0 نقطة غير مفحوصة) ✓"
+                                        AppLanguage.FR -> "Tous les points prévus ont été vérifiés (0 point non vérifié) ✓"
+                                        AppLanguage.EN -> "All scheduled items were verified (0 items not checked) ✓"
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = StatusPassGreen,
                                     fontWeight = FontWeight.Bold
                                 )
                             } else {
+                                if (report.uncheckedCriticalItems.isNotEmpty()) {
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 8.dp),
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = StatusErrorRedContainer,
+                                        border = BorderStroke(1.dp, StatusErrorRed)
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            Text(
+                                                text = when (language) {
+                                                    AppLanguage.AR -> "نقاط حرجة لم يتم فحصها (${report.uncheckedCriticalItems.size}) — يجب فحصها لإظهار النتيجة:"
+                                                    AppLanguage.FR -> "Points CRITIQUES non vérifiés (${report.uncheckedCriticalItems.size}) — requis pour calculer le score :"
+                                                    AppLanguage.EN -> "Unchecked CRITICAL items (${report.uncheckedCriticalItems.size}) — required before a score is shown:"
+                                                },
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = StatusErrorRedOnContainer
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            report.uncheckedCriticalItems.forEach { crit ->
+                                                Text(
+                                                    text = "⚠️ [${crit.getSectionTitle(language)}] ${crit.getQuestion(language)}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = StatusErrorRedOnContainer,
+                                                    modifier = Modifier.padding(vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
                                 Text(
                                     text = when (language) {
-                                        AppLanguage.AR -> "للأمانة والوضوح: هذه النقاط لم يتم التأكد منها خلال الزيارة:"
-                                        AppLanguage.FR -> "Par transparence, ces éléments n'ont pas pu être contrôlés pendant la visite :"
-                                        AppLanguage.EN -> "For transparency, these items were skipped or could not be checked:"
+                                        AppLanguage.AR -> "عدد النقاط غير المفحوصة: ${report.uncheckedItems.size} من أصل ${report.totalApplicableCount} (مستبعدة من النتيجة):"
+                                        AppLanguage.FR -> "${report.uncheckedItems.size} point(s) sur ${report.totalApplicableCount} non vérifié(s) (exclus du score) :"
+                                        AppLanguage.EN -> "${report.uncheckedItems.size} of ${report.totalApplicableCount} item(s) not checked (left out of the score):"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Slate600
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 report.uncheckedItems.forEach { item ->
+                                    val critPrefix = if (item.severity == ItemSeverity.CRITICAL) "[CRITIQUE] " else ""
                                     Text(
-                                        text = "• [${item.getSectionTitle(language)}] ${item.getQuestion(language)}",
+                                        text = "• $critPrefix[${item.getSectionTitle(language)}] ${item.getQuestion(language)}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Slate700,
+                                        color = if (item.severity == ItemSeverity.CRITICAL) StatusErrorRed else Slate700,
+                                        fontWeight = if (item.severity == ItemSeverity.CRITICAL) FontWeight.SemiBold else FontWeight.Normal,
                                         modifier = Modifier.padding(vertical = 3.dp)
                                     )
                                 }
@@ -491,7 +532,9 @@ private fun ScoreVerdictHeroCard(
     report: InspectionReportData,
     language: AppLanguage
 ) {
+    val scoreVal = report.overallScore
     val ringColor = when (report.verdict) {
+        "INCOMPLETE" -> Color(0xFF94A3B8)
         "GOOD" -> Color(0xFF34D399)
         "NEGOTIATE" -> Color(0xFFFBBF24)
         else -> Color(0xFFF87171)
@@ -522,23 +565,33 @@ private fun ScoreVerdictHeroCard(
                             useCenter = false,
                             style = Stroke(width = 22f, cap = StrokeCap.Round)
                         )
-                        drawArc(
-                            color = ringColor,
-                            startAngle = -90f,
-                            sweepAngle = (report.overallScore / 100f) * 360f,
-                            useCenter = false,
-                            style = Stroke(width = 22f, cap = StrokeCap.Round)
-                        )
+                        if (scoreVal != null) {
+                            drawArc(
+                                color = ringColor,
+                                startAngle = -90f,
+                                sweepAngle = (scoreVal / 100f) * 360f,
+                                useCenter = false,
+                                style = Stroke(width = 22f, cap = StrokeCap.Round)
+                            )
+                        }
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "${report.overallScore}",
+                            text = if (scoreVal != null) "$scoreVal" else "—",
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color.White
                         )
                         Text(
-                            text = "/ 100",
+                            text = if (scoreVal != null) {
+                                "/ 100"
+                            } else {
+                                when (language) {
+                                    AppLanguage.AR -> "غير مكتمل"
+                                    AppLanguage.FR -> "Incomplet"
+                                    AppLanguage.EN -> "Incomplete"
+                                }
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = Slate300
                         )
@@ -566,9 +619,9 @@ private fun ScoreVerdictHeroCard(
 
                     Text(
                         text = when (language) {
-                            AppLanguage.AR -> "التغطية: ${report.checkedCount}/${report.totalApplicableCount} نقطة مفحوصة (${report.coveragePercent}%)"
-                            AppLanguage.FR -> "Couverture : ${report.checkedCount}/${report.totalApplicableCount} points (${report.coveragePercent}%)"
-                            AppLanguage.EN -> "Coverage: ${report.checkedCount}/${report.totalApplicableCount} checked (${report.coveragePercent}%)"
+                            AppLanguage.AR -> "تم فحص ${report.checkedCount}/${report.totalApplicableCount} • غير مفحوص: ${report.uncheckedItems.size}"
+                            AppLanguage.FR -> "Vérifiés : ${report.checkedCount}/${report.totalApplicableCount} • Non vérifiés : ${report.uncheckedItems.size}"
+                            AppLanguage.EN -> "Checked: ${report.checkedCount}/${report.totalApplicableCount} • Not checked: ${report.uncheckedItems.size}"
                         },
                         style = MaterialTheme.typography.labelMedium,
                         color = Emerald200
@@ -1004,35 +1057,25 @@ private fun FindingsSectionCard(
                             lineHeight = 18.sp
                         )
 
-                        if (item.buyerNote.isNotBlank() || item.photoUri != null) {
-                            Spacer(modifier = Modifier.height(6.dp))
+                        val realThumb = remember(item.photoUri) {
+                            InspectionPhotoHelper.loadThumbnailBitmap(item.photoUri, maxDimensionPx = 280)
+                        }
+                        if (item.buyerNote.isNotBlank() || realThumb != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                if (item.photoUri != null) {
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = Emerald100
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.PhotoCamera,
-                                                contentDescription = null,
-                                                tint = Emerald800,
-                                                modifier = Modifier.size(12.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = "Photo ✓",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = Emerald900
-                                            )
-                                        }
-                                    }
+                                if (realThumb != null) {
+                                    Image(
+                                        bitmap = realThumb.asImageBitmap(),
+                                        contentDescription = "Inspection evidence photo",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .border(1.dp, Emerald600, RoundedCornerShape(8.dp))
+                                    )
                                 }
                                 if (item.buyerNote.isNotBlank()) {
                                     Text(

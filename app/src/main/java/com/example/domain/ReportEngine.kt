@@ -49,15 +49,18 @@ data class ReportFindingItem(
 
 data class InspectionReportData(
     val inspection: InspectionEntity,
-    val overallScore: Int,
-    val rawUncappedScore: Int,
+    val overallScore: Int?,
+    val rawUncappedScore: Int?,
     val isCriticalCapTriggered: Boolean,
     val isImportantCapTriggered: Boolean,
-    val verdict: String, // GOOD, NEGOTIATE, AVOID
+    val verdict: String, // GOOD, NEGOTIATE, AVOID, or INCOMPLETE
     val criticalProblems: List<ReportFindingItem>,
     val negotiableProblems: List<ReportFindingItem>,
     val passedItems: List<ReportFindingItem>,
     val uncheckedItems: List<ReportFindingItem>,
+    val uncheckedCriticalItems: List<ReportFindingItem>,
+    val minimumRequiredCount: Int,
+    val isMinimumThresholdMet: Boolean,
     val minTotalRepairDzd: Int,
     val maxTotalRepairDzd: Int,
     val avgTotalRepairDzd: Int,
@@ -70,6 +73,11 @@ data class InspectionReportData(
     val plateAnalysis: AlgerianPlateResult?
 ) {
     fun getVerdictTitle(lang: AppLanguage): String = when (verdict) {
+        "INCOMPLETE" -> when (lang) {
+            AppLanguage.AR -> "الفحص غير مكتمل — لا توجد نتيجة أو حكم بعد"
+            AppLanguage.FR -> "Inspection incomplète — Aucun score ni verdict"
+            AppLanguage.EN -> "Inspection Incomplete — No Score or Verdict Yet"
+        }
         "GOOD" -> when (lang) {
             AppLanguage.AR -> "سيارة بحالة جيدة (Bon achat)"
             AppLanguage.FR -> "Bon état général — Achat recommandé"
@@ -87,22 +95,47 @@ data class InspectionReportData(
         }
     }
 
-    fun getVerdictSummary(lang: AppLanguage): String = when {
-        isCriticalCapTriggered -> when (lang) {
-            AppLanguage.AR -> "تم تقييد النتيجة القصوى إلى $overallScore/100 (بدلاً من $rawUncappedScore/100) بسبب رصد ${criticalProblems.size} نقطة حرجة تمس سلامة الشاسيه، المحرك أو الوثائق. هذا الأمر يستحق رأي ميكانيكي مختص قبل دفع أي مبلغ."
-            AppLanguage.FR -> "Le score a été plafonné à $overallScore/100 (score brut : $rawUncappedScore/100) car ${criticalProblems.size} anomalie(s) critique(s) ont été relevées (châssis, moteur, calculateur ou documents). Cela mérite l'avis d'un mécanicien avant tout engagement."
-            AppLanguage.EN -> "The score was capped at $overallScore/100 (uncapped: $rawUncappedScore/100) because ${criticalProblems.size} critical finding(s) were recorded. This deserves a trusted mechanic's opinion before committing."
+    fun getVerdictSummary(lang: AppLanguage): String {
+        val uncheckedNote = when (lang) {
+            AppLanguage.AR -> "عدد النقاط غير المفحوصة: ${uncheckedItems.size} من أصل $totalApplicableCount."
+            AppLanguage.FR -> "Points non vérifiés : ${uncheckedItems.size} sur $totalApplicableCount."
+            AppLanguage.EN -> "Items not checked: ${uncheckedItems.size} out of $totalApplicableCount."
         }
-        verdict == "NEGOTIATE" -> when (lang) {
-            AppLanguage.AR -> "لم يتم رصد عيوب هيكلية قاتلة، لكن توجد ${negotiableProblems.size} ملاحظات تحتاج صيانة بتكلفة تقديرية بين ${ReportEngine.formatDzd(minTotalRepairDzd)} و ${ReportEngine.formatDzd(maxTotalRepairDzd)}. استخدم هذه القائمة للتفاوض الهادئ مع البائع."
-            AppLanguage.FR -> "Aucun défaut critique bloquant n'a été relevé, mais ${negotiableProblems.size} point(s) nécessitent des frais estimés entre ${ReportEngine.formatDzd(minTotalRepairDzd)} et ${ReportEngine.formatDzd(maxTotalRepairDzd)}. Utilisez ce chiffrage pour négocier sereinement."
-            AppLanguage.EN -> "No critical deal-breakers were found, but ${negotiableProblems.size} item(s) need attention costing roughly ${ReportEngine.formatDzd(minTotalRepairDzd)} to ${ReportEngine.formatDzd(maxTotalRepairDzd)}. Use this breakdown to negotiate a fair price."
+        if (verdict == "INCOMPLETE" || overallScore == null) {
+            val critNote = if (uncheckedCriticalItems.isNotEmpty()) {
+                val names = uncheckedCriticalItems.joinToString(" • ") { it.getQuestion(lang) }
+                when (lang) {
+                    AppLanguage.AR -> " النقاط الحرجة غير المفحوصة (${uncheckedCriticalItems.size}): $names"
+                    AppLanguage.FR -> " Points critiques non vérifiés (${uncheckedCriticalItems.size}) : $names"
+                    AppLanguage.EN -> " Unchecked critical items (${uncheckedCriticalItems.size}): $names"
+                }
+            } else ""
+            val baseIncomplete = when (lang) {
+                AppLanguage.AR -> "لا يتم عرض نتيجة أو حكم حتى يتم فحص ما لا يقل عن $minimumRequiredCount نقطة (70%) وجميع النقاط الحرجة في هذا الوضع. $uncheckedNote"
+                AppLanguage.FR -> "Aucun score ni verdict n'est affiché tant qu'au moins $minimumRequiredCount points (70%) et la totalité des points critiques du mode choisi n'ont pas été vérifiés. $uncheckedNote"
+                AppLanguage.EN -> "No score or verdict is shown until at least $minimumRequiredCount items (70%) and all critical items in the chosen mode are answered. $uncheckedNote"
+            }
+            return baseIncomplete + critNote
         }
-        else -> when (lang) {
-            AppLanguage.AR -> "اجتازت السيارة النقاط المفحوصة بنجاح ($checkedCount/$totalApplicableCount نقطة مفحوصة). تأكد دائماً من مطابقة البطاقة الرمادية وإجراء عقد البيع الرسمي."
-            AppLanguage.FR -> "Le véhicule a passé les contrôles avec succès ($checkedCount/$totalApplicableCount points vérifiés). Vérifiez toujours la carte grise originale lors de la transaction."
-            AppLanguage.EN -> "The vehicle passed the inspected points cleanly ($checkedCount/$totalApplicableCount items checked). Always verify original registration documents at sale."
+
+        val mainSummary = when {
+            isCriticalCapTriggered -> when (lang) {
+                AppLanguage.AR -> "تم تقييد النتيجة القصوى إلى $overallScore/100 (بدلاً من $rawUncappedScore/100) بسبب رصد ${criticalProblems.size} نقطة حرجة تمس سلامة الشاسيه، المحرك أو الوثائق. هذا الأمر يستحق رأي ميكانيكي مختص قبل دفع أي مبلغ."
+                AppLanguage.FR -> "Le score a été plafonné à $overallScore/100 (score brut : $rawUncappedScore/100) car ${criticalProblems.size} anomalie(s) critique(s) ont été relevées (châssis, moteur, calculateur ou documents). Cela mérite l'avis d'un mécanicien avant tout engagement."
+                AppLanguage.EN -> "The score was capped at $overallScore/100 (uncapped: $rawUncappedScore/100) because ${criticalProblems.size} critical finding(s) were recorded. This deserves a trusted mechanic's opinion before committing."
+            }
+            verdict == "NEGOTIATE" -> when (lang) {
+                AppLanguage.AR -> "لم يتم رصد عيوب هيكلية قاتلة، لكن توجد ${negotiableProblems.size} ملاحظات تحتاج صيانة بتكلفة تقديرية بين ${ReportEngine.formatDzd(minTotalRepairDzd)} و ${ReportEngine.formatDzd(maxTotalRepairDzd)}. استخدم هذه القائمة للتفاوض الهادئ مع البائع."
+                AppLanguage.FR -> "Aucun défaut critique bloquant n'a été relevé, mais ${negotiableProblems.size} point(s) nécessitent des frais estimés entre ${ReportEngine.formatDzd(minTotalRepairDzd)} et ${ReportEngine.formatDzd(maxTotalRepairDzd)}. Utilisez ce chiffrage pour négocier sereinement."
+                AppLanguage.EN -> "No critical deal-breakers were found, but ${negotiableProblems.size} item(s) need attention costing roughly ${ReportEngine.formatDzd(minTotalRepairDzd)} to ${ReportEngine.formatDzd(maxTotalRepairDzd)}. Use this breakdown to negotiate a fair price."
+            }
+            else -> when (lang) {
+                AppLanguage.AR -> "اجتازت السيارة النقاط المفحوصة بنجاح ($checkedCount/$totalApplicableCount نقطة مفحوصة)."
+                AppLanguage.FR -> "Le véhicule a passé les contrôles vérifiés avec succès ($checkedCount/$totalApplicableCount points vérifiés)."
+                AppLanguage.EN -> "The vehicle passed the checked points cleanly ($checkedCount/$totalApplicableCount items checked)."
+            }
         }
+        return "$mainSummary $uncheckedNote"
     }
 }
 
@@ -214,41 +247,53 @@ object ReportEngine {
             )
         }
 
-        val rawPercentage = if (totalMaxPoints > 0) {
-            (((totalMaxPoints - deductedPoints).toDouble() / totalMaxPoints.toDouble()) * 100.0)
-                .toInt()
-                .coerceIn(0, 100)
-        } else {
-            100
-        }
-
-        val finalScore = when {
-            hasCriticalProblem -> minOf(rawPercentage, 42)
-            importantProblemCount >= 3 -> minOf(rawPercentage, 68)
-            else -> rawPercentage
-        }
-
-        val isCriticalCapTriggered = hasCriticalProblem && rawPercentage > 42
-        val isImportantCapTriggered = !hasCriticalProblem && importantProblemCount >= 3 && rawPercentage > 68
-
-        val verdict = when {
-            hasCriticalProblem || finalScore < 50 -> "AVOID"
-            finalScore < 78 || importantProblemCount >= 1 || allFindings.any { it.status == "PROBLEM" } -> "NEGOTIATE"
-            else -> "GOOD"
-        }
-
         val criticalProblems = allFindings.filter { it.status == "PROBLEM" && it.severity == ItemSeverity.CRITICAL }
         val negotiableProblems = allFindings.filter { it.status == "PROBLEM" && it.severity != ItemSeverity.CRITICAL }
         val passedItems = allFindings.filter { it.status == "GOOD" }
         val uncheckedItems = allFindings.filter { it.status == "UNCHECKED" }
-
-        val minTotalDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.minCostDzd }
-        val maxTotalDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.maxCostDzd }
-        val avgTotalDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.avgCostDzd }
+        val uncheckedCriticalItems = uncheckedItems.filter { it.severity == ItemSeverity.CRITICAL }
 
         val checkedCount = passedItems.size + criticalProblems.size + negotiableProblems.size
         val totalApplicableCount = allFindings.size.coerceAtLeast(1)
         val coveragePercent = ((checkedCount.toDouble() / totalApplicableCount.toDouble()) * 100.0).toInt().coerceIn(0, 100)
+
+        val minimumRequiredCount = kotlin.math.ceil(totalApplicableCount * ChecklistEngine.MINIMUM_ANSWERED_SHARE).toInt().coerceAtLeast(1)
+        val isMinimumThresholdMet = checkedCount >= minimumRequiredCount && uncheckedCriticalItems.isEmpty() && totalMaxPoints > 0
+
+        val rawPercentage: Int? = if (isMinimumThresholdMet) {
+            (((totalMaxPoints - deductedPoints).toDouble() / totalMaxPoints.toDouble()) * 100.0)
+                .toInt()
+                .coerceIn(0, 100)
+        } else {
+            null
+        }
+
+        val finalScore: Int? = if (rawPercentage != null) {
+            when {
+                hasCriticalProblem -> minOf(rawPercentage, 42)
+                importantProblemCount >= 3 -> minOf(rawPercentage, 68)
+                else -> rawPercentage
+            }
+        } else {
+            null
+        }
+
+        val isCriticalCapTriggered = rawPercentage != null && hasCriticalProblem && rawPercentage > 42
+        val isImportantCapTriggered = rawPercentage != null && !hasCriticalProblem && importantProblemCount >= 3 && rawPercentage > 68
+
+        val verdict = if (finalScore == null) {
+            "INCOMPLETE"
+        } else {
+            when {
+                hasCriticalProblem || finalScore < 50 -> "AVOID"
+                finalScore < 78 || importantProblemCount >= 1 || allFindings.any { it.status == "PROBLEM" } -> "NEGOTIATE"
+                else -> "GOOD"
+            }
+        }
+
+        val minTotalDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.minCostDzd }
+        val maxTotalDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.maxCostDzd }
+        val avgTotalDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.avgCostDzd }
 
         val vinAnalysis = if (inspection.vin.isNotBlank()) {
             VinAndPlateEngine.analyzeVin(inspection.vin)
@@ -269,6 +314,9 @@ object ReportEngine {
             negotiableProblems = negotiableProblems,
             passedItems = passedItems,
             uncheckedItems = uncheckedItems,
+            uncheckedCriticalItems = uncheckedCriticalItems,
+            minimumRequiredCount = minimumRequiredCount,
+            isMinimumThresholdMet = isMinimumThresholdMet,
             minTotalRepairDzd = minTotalDzd,
             maxTotalRepairDzd = maxTotalDzd,
             avgTotalRepairDzd = avgTotalDzd,

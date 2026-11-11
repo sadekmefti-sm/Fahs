@@ -72,13 +72,15 @@ fun CarComparisonDialog(
     onSelectCarReport: (Long) -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Rank cars by: 1) highest overallScore, 2) lowest totalEstimatedCostDzd, 3) lowest problemCount
+    // Rank cars that have a valid score by: 1) highest overallScore, 2) lowest totalEstimatedCostDzd, 3) lowest problemCount
     val bestInspectionId = remember(inspections) {
-        inspections.maxWithOrNull(
-            compareBy<InspectionEntity> { it.overallScore ?: 50 }
-                .thenByDescending { -it.totalEstimatedCostDzd }
-                .thenByDescending { -it.problemCount }
-        )?.id
+        inspections
+            .filter { it.overallScore != null }
+            .maxWithOrNull(
+                compareBy<InspectionEntity> { it.overallScore ?: 0 }
+                    .thenByDescending { -it.totalEstimatedCostDzd }
+                    .thenByDescending { -it.problemCount }
+            )?.id
     }
 
     Dialog(
@@ -245,8 +247,9 @@ private fun ComparisonCarColumn(
     onOpenReport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val score = car.overallScore ?: 100
+    val score = car.overallScore
     val scoreColor = when {
+        score == null -> Slate600
         score >= 78 -> StatusPassGreen
         score >= 50 -> StatusWarningAmber
         else -> StatusErrorRed
@@ -269,9 +272,9 @@ private fun ComparisonCarColumn(
             AppLanguage.EN -> "Avoid / High Risk"
         }
         else -> when (language) {
-            AppLanguage.AR -> "قيد الفحص"
-            AppLanguage.FR -> "En cours"
-            AppLanguage.EN -> "In Progress"
+            AppLanguage.AR -> "فحص غير مكتمل"
+            AppLanguage.FR -> "Inspection incomplète"
+            AppLanguage.EN -> "Incomplete Check"
         }
     }
 
@@ -351,7 +354,7 @@ private fun ComparisonCarColumn(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "$score / 100",
+                        text = if (score != null) "$score / 100" else "—",
                         fontSize = 24.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = scoreColor

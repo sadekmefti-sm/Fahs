@@ -85,6 +85,7 @@ fun HomeScreen(
     inspections: List<InspectionEntity>,
     completedCount: Int,
     inProgressCount: Int,
+    shopSettings: com.example.data.repository.ShopSettings = com.example.data.repository.ShopSettings(),
     showWelcomeCard: Boolean = true,
     onDismissWelcomeCard: () -> Unit = {},
     onOpenOnboardingSection: (String) -> Unit = {},
@@ -706,9 +707,9 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = when (language) {
-                                AppLanguage.AR -> "النسخة V1.5 الموصى بها، السعر (1500–3500 دج)، وحماية بياناتك 100%"
-                                AppLanguage.FR -> "Version V1.5 recommandée, prix (1 500–3 500 DZD) & données 100% privées"
-                                AppLanguage.EN -> "Recommended V1.5 adapter, price (1,500–3,500 DZD) & 100% private data"
+                                AppLanguage.AR -> "النسخة V1.5 الموصى بها، السعر (${shopSettings.formattedDonglePrice()})، وحماية بياناتك 100%"
+                                AppLanguage.FR -> "Version V1.5 recommandée, prix (${shopSettings.formattedDonglePrice()}) & données 100% privées"
+                                AppLanguage.EN -> "Recommended V1.5 adapter, price (${shopSettings.formattedDonglePrice()}) & 100% private data"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = Slate600,

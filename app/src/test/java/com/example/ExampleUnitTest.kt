@@ -88,7 +88,7 @@ class ExampleUnitTest {
             item.id to if (item.id == "bonnet_chassis_longerons") "PROBLEM" else "GOOD"
         }
         val (score, verdict, totalCostDzd) = ChecklistEngine.calculateScoreAndVerdict(answers, items)
-        assertTrue("Critical problem must cap score <= 42", score <= 42)
+        assertTrue("Critical problem must cap score <= 42", (score ?: 100) <= 42)
         assertEquals("AVOID", verdict)
         assertTrue("Estimated DZD cost should be > 0", totalCostDzd > 0)
     }
@@ -179,7 +179,7 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun `report engine calculates negotiation offer in Millions de centimes and caps critical defects`() {
+    fun `report engine returns INCOMPLETE when only 1 item answered and caps critical defects when all answered`() {
         val inspection = InspectionEntity(
             id = 10L,
             carBrand = "Renault",
@@ -192,7 +192,7 @@ class ExampleUnitTest {
             plateNumber = "04821 118 16",
             inspectionMode = "QUICK"
         )
-        val answers = listOf(
+        val singleAnswer = listOf(
             ChecklistAnswerEntity(
                 inspectionId = 10L,
                 itemId = "bonnet_chassis_longerons",
@@ -205,10 +205,36 @@ class ExampleUnitTest {
                 estimatedCostDzd = 120000
             )
         )
-        val report = ReportEngine.buildReport(inspection, answers)
-        assertTrue(report.overallScore <= 42)
-        assertEquals("AVOID", report.verdict)
-        assertEquals(1, report.criticalProblems.size)
+        val incompleteReport = ReportEngine.buildReport(inspection, singleAnswer)
+        assertEquals(null, incompleteReport.overallScore)
+        assertEquals("INCOMPLETE", incompleteReport.verdict)
+        assertTrue(incompleteReport.uncheckedItems.isNotEmpty())
+        assertTrue(incompleteReport.uncheckedCriticalItems.isNotEmpty())
+
+        val allItems = ChecklistEngine.buildChecklistForCar(
+            brand = "Renault",
+            model = "Clio 4",
+            fuelType = "DIESEL",
+            gearboxType = "MANUELLE",
+            isQuickMode = true
+        )
+        val fullAnswers = allItems.map { item ->
+            ChecklistAnswerEntity(
+                inspectionId = 10L,
+                itemId = item.id,
+                category = item.section.name,
+                questionFr = item.questionFr,
+                questionAr = item.questionAr,
+                questionEn = item.questionEn,
+                status = if (item.id == "bonnet_chassis_longerons") "PROBLEM" else "GOOD",
+                severity = item.severity.name,
+                estimatedCostDzd = if (item.id == "bonnet_chassis_longerons") 120000 else 0
+            )
+        }
+        val completeReport = ReportEngine.buildReport(inspection, fullAnswers)
+        assertTrue((completeReport.overallScore ?: 100) <= 42)
+        assertEquals("AVOID", completeReport.verdict)
+        assertEquals(1, completeReport.criticalProblems.size)
 
         // 240 Millions asking price (2,400,000 DZD) minus 50,000 to 100,000 DZD repairs -> 2,300,000 to 2,350,000 DZD
         val (minOffer, maxOffer) = ReportEngine.calculateFairOfferRangeDzd(240.0, 50000, 100000)

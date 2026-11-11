@@ -94,25 +94,23 @@ fun ObdGuideScreen(
     language: AppLanguage,
     activeInspection: InspectionEntity? = null,
     initialScanResult: ObdScanResult? = null,
+    isDeveloperModeEnabled: Boolean = false,
     onSaveScanToInspection: (ObdScanResult, Boolean) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // 0 = Simulator (4 profiles), 1 = Real Bluetooth ELM327, 2 = Guide & Port Locations
-    var selectedSubTab by remember { mutableIntStateOf(0) }
+    // 1 = Real Bluetooth ELM327 (default), 2 = Guide & Port Locations, 0 = Simulator (Developer Mode only)
+    var selectedSubTab by remember(isDeveloperModeEnabled) {
+        mutableIntStateOf(1)
+    }
     var selectedProfile by remember { mutableStateOf(ObdSimulatorProfile.HEALTHY) }
 
-    val expectedVin = activeInspection?.vin ?: "VF15RJL0A58492011"
+    val expectedVin = activeInspection?.vin?.trim() ?: ""
 
     var currentScanResult by remember(initialScanResult) {
-        mutableStateOf(
-            initialScanResult ?: ObdDiagnosticEngine.generateSimulatedScan(
-                profile = ObdSimulatorProfile.HEALTHY,
-                expectedVin = expectedVin
-            )
-        )
+        mutableStateOf(initialScanResult?.takeIf { !it.isSimulated })
     }
 
     var milBulbLitOnDashboard by remember { mutableStateOf(true) }
@@ -238,23 +236,12 @@ fun ObdGuideScreen(
             }
         }
 
-        // 2. Mode Segmented Tabs (Simulator / Real Bluetooth / Connection Guide)
+        // 2. Mode Segmented Tabs (Real Bluetooth / Connection Guide; Simulator only in Developer Mode)
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ObdModeTabButton(
-                    title = when (language) {
-                        AppLanguage.AR -> "محاكي (4 سيارات)"
-                        AppLanguage.FR -> "Simulateur (4 cas)"
-                        AppLanguage.EN -> "Simulator (4 cars)"
-                    },
-                    selected = selectedSubTab == 0,
-                    testTag = "obd_tab_simulator",
-                    onClick = { selectedSubTab = 0 },
-                    modifier = Modifier.weight(1f)
-                )
                 ObdModeTabButton(
                     title = when (language) {
                         AppLanguage.AR -> "بلوتوث ELM327"
@@ -277,11 +264,24 @@ fun ObdGuideScreen(
                     onClick = { selectedSubTab = 2 },
                     modifier = Modifier.weight(1f)
                 )
+                if (isDeveloperModeEnabled) {
+                    ObdModeTabButton(
+                        title = when (language) {
+                            AppLanguage.AR -> "[DEV] محاكي"
+                            AppLanguage.FR -> "[DEV] Simulateur"
+                            AppLanguage.EN -> "[DEV] Simulator"
+                        },
+                        selected = selectedSubTab == 0,
+                        testTag = "obd_tab_simulator",
+                        onClick = { selectedSubTab = 0 },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
 
         // 3. Content per Sub-Tab
-        when (selectedSubTab) {
+        when (if (!isDeveloperModeEnabled && selectedSubTab == 0) 1 else selectedSubTab) {
             0 -> {
                 // Simulator 4-Profile Selector Card
                 item {
@@ -374,18 +374,40 @@ fun ObdGuideScreen(
                     }
                 }
 
-                // Render Full Scan Result
+                // Render Simulated Scan Result (Developer Mode only — never saveable to an inspection or PDF)
                 item {
+                    val simScan = ObdDiagnosticEngine.generateSimulatedScan(
+                        profile = selectedProfile,
+                        expectedVin = expectedVin
+                    )
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = StatusWarningAmberContainer,
+                        border = BorderStroke(1.dp, StatusWarningAmber)
+                    ) {
+                        Text(
+                            text = when (language) {
+                                AppLanguage.AR -> "وضع المطورين فقط: هذه بيانات محاكاة للتجربة ولا يمكن حفظها في أي فحص حقيقي أو ملف PDF."
+                                AppLanguage.FR -> "Mode Développeur uniquement : résultat simulé impossible à enregistrer dans une inspection ou un PDF."
+                                AppLanguage.EN -> "Developer Mode only: simulated result cannot be saved into any inspection or PDF."
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = StatusWarningAmberOnContainer,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
                     ObdScanResultSection(
-                        scanResult = currentScanResult,
+                        scanResult = simScan,
                         language = language,
                         expectedVin = expectedVin,
                         milBulbLitOnDashboard = milBulbLitOnDashboard,
                         onMilBulbToggle = { milBulbLitOnDashboard = it },
-                        hasActiveInspection = activeInspection != null,
-                        onSaveToInspection = {
-                            onSaveScanToInspection(currentScanResult, milBulbLitOnDashboard)
-                        }
+                        hasActiveInspection = false,
+                        onSaveToInspection = {}
                     )
                 }
             }
@@ -509,9 +531,9 @@ fun ObdGuideScreen(
                                     ) {
                                         Text(
                                             text = when (language) {
-                                                AppLanguage.AR -> "لم يتم العثور على جهاز مقترن. يرجى توصيل جهاز ELM327 بمنفذ السيارة، فتح Contact، والاقتران بـ OBDII في إعدادات بلوتوث الهاتف (الرمز 1234 أو 0000)، أو استخدم تبويب المحاكي أعلاه للتجربة الفورية."
-                                                AppLanguage.FR -> "Aucun boîtier appairé détecté. Branchez l'ELM327, mettez le contact, appairez 'OBDII' dans les paramètres Bluetooth du téléphone (code 1234 ou 0000), ou utilisez l'onglet Simulateur ci-dessus."
-                                                AppLanguage.EN -> "No paired adapter found. Plug in the ELM327, turn ignition ON, pair 'OBDII' in phone Bluetooth settings (PIN 1234 or 0000), or use the Simulator tab above."
+                                                AppLanguage.AR -> "لم يتم العثور على جهاز مقترن. يرجى توصيل جهاز ELM327 بمنفذ السيارة، فتح Contact، والاقتران بـ OBDII في إعدادات بلوتوث الهاتف (الرمز 1234 أو 0000)."
+                                                AppLanguage.FR -> "Aucun boîtier appairé détecté. Branchez l'ELM327, mettez le contact et appairez 'OBDII' dans les paramètres Bluetooth du téléphone (code 1234 ou 0000)."
+                                                AppLanguage.EN -> "No paired adapter found. Plug in the ELM327, turn ignition ON, and pair 'OBDII' in your phone's Bluetooth settings (PIN 1234 or 0000)."
                                             },
                                             style = MaterialTheme.typography.bodySmall,
                                             color = StatusWarningAmberOnContainer,
@@ -637,19 +659,22 @@ fun ObdGuideScreen(
                     }
                 }
 
-                // Also show current scan result below
-                item {
-                    ObdScanResultSection(
-                        scanResult = currentScanResult,
-                        language = language,
-                        expectedVin = expectedVin,
-                        milBulbLitOnDashboard = milBulbLitOnDashboard,
-                        onMilBulbToggle = { milBulbLitOnDashboard = it },
-                        hasActiveInspection = activeInspection != null,
-                        onSaveToInspection = {
-                            onSaveScanToInspection(currentScanResult, milBulbLitOnDashboard)
-                        }
-                    )
+                // Show real scan result below only after an actual Bluetooth scan has run
+                val realScan = currentScanResult?.takeIf { !it.isSimulated }
+                if (realScan != null) {
+                    item {
+                        ObdScanResultSection(
+                            scanResult = realScan,
+                            language = language,
+                            expectedVin = expectedVin,
+                            milBulbLitOnDashboard = milBulbLitOnDashboard,
+                            onMilBulbToggle = { milBulbLitOnDashboard = it },
+                            hasActiveInspection = activeInspection != null,
+                            onSaveToInspection = {
+                                onSaveScanToInspection(realScan, milBulbLitOnDashboard)
+                            }
+                        )
+                    }
                 }
             }
 

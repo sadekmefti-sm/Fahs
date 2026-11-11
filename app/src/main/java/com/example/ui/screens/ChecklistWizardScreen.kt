@@ -1,11 +1,14 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,14 +34,17 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.PauseCircleOutline
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.ThumbDown
@@ -72,19 +78,25 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.Strings
+import com.example.core.photo.InspectionPhotoHelper
 import com.example.data.local.ChecklistAnswerEntity
 import com.example.data.local.InspectionEntity
 import com.example.data.model.ChecklistItemDefinition
 import com.example.data.model.ChecklistSection
 import com.example.data.model.ItemSeverity
 import com.example.domain.ChecklistEngine
+import java.io.File
 import com.example.ui.theme.Emerald100
 import com.example.ui.theme.Emerald200
 import com.example.ui.theme.Emerald50
@@ -125,11 +137,12 @@ fun ChecklistWizardScreen(
     ) -> Unit,
     onExtendToFullInspection: () -> Unit,
     onPauseAndExit: () -> Unit,
-    onFinishInspection: (score: Int, verdict: String, totalRepairDzd: Int) -> Unit,
+    onFinishInspection: (score: Int?, verdict: String, totalRepairDzd: Int) -> Unit,
     onOpenObdScanner: () -> Unit = {},
     onOpenLiveReport: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val isQuickMode = inspection.inspectionMode.equals("QUICK", ignoreCase = true)
 
     val adaptiveItems = remember(
@@ -175,32 +188,85 @@ fun ChecklistWizardScreen(
 
     var showHowToCheck by remember(currentItem.id) { mutableStateOf(false) }
     var showNoteEditor by remember(currentItem.id) {
-        mutableStateOf(!currentSaved?.note.isNullOrBlank() || !currentSaved?.photoUri.isNullOrBlank())
+        mutableStateOf(!currentSaved?.note.isNullOrBlank())
     }
     var noteText by remember(currentItem.id, currentSaved?.note) {
         mutableStateOf(currentSaved?.note ?: "")
     }
     var photoLabel by remember(currentItem.id, currentSaved?.photoUri) {
-        mutableStateOf(currentSaved?.photoUri)
+        mutableStateOf(
+            currentSaved?.photoUri?.takeIf { InspectionPhotoHelper.isRealStoredPhoto(it) }
+        )
     }
+    var pendingCameraTempFile by remember(currentItem.id) { mutableStateOf<File?>(null) }
 
-    // Zero-permission Android Photo Picker for attaching evidence photos
+    // Zero-permission Android Photo Picker for choosing an image from gallery (copies into app storage)
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        val chosenUri = uri?.toString() ?: "photo_${currentItem.id}_${System.currentTimeMillis()}.jpg"
-        photoLabel = chosenUri
-        showNoteEditor = true
+        if (uri == null) {
+            // User cancelled the picker — never store a fake file name
+            return@rememberLauncherForActivityResult
+        }
+        val savedInternalPath = InspectionPhotoHelper.copyUriToInternalStorage(
+            context = context,
+            sourceUri = uri,
+            itemId = currentItem.id
+        ) ?: return@rememberLauncherForActivityResult
+
+        photoLabel = savedInternalPath
         onSaveAnswer(
             currentItem,
             currentSaved?.status ?: "PROBLEM",
             noteText,
-            chosenUri,
+            savedInternalPath,
             adaptiveItems.size
         )
     }
 
-    val answeredCount = adaptiveItems.count { answersMap.containsKey(it.id) }
+    // Camera capture launcher (copies captured image into app's persistent internal storage)
+    val cameraTakePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val tempFile = pendingCameraTempFile
+        pendingCameraTempFile = null
+        if (!success || tempFile == null) {
+            try {
+                tempFile?.delete()
+            } catch (_: Exception) {}
+            return@rememberLauncherForActivityResult
+        }
+        val savedInternalPath = InspectionPhotoHelper.copyFileToInternalStorage(
+            context = context,
+            sourceFile = tempFile,
+            itemId = currentItem.id
+        ) ?: return@rememberLauncherForActivityResult
+
+        photoLabel = savedInternalPath
+        onSaveAnswer(
+            currentItem,
+            currentSaved?.status ?: "PROBLEM",
+            noteText,
+            savedInternalPath,
+            adaptiveItems.size
+        )
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            val (tempFile, uri) = InspectionPhotoHelper.createTempCameraUri(context, currentItem.id)
+            pendingCameraTempFile = tempFile
+            cameraTakePictureLauncher.launch(uri)
+        }
+    }
+
+    val liveEvaluation = remember(answersMap, adaptiveItems) {
+        val statusMap = answersMap.mapValues { it.value.status }
+        ChecklistEngine.evaluateChecklist(statusMap, adaptiveItems)
+    }
+    val answeredCount = liveEvaluation.answeredCount
     val progressFraction = if (adaptiveItems.isNotEmpty()) {
         (safeIndex + 1).toFloat() / adaptiveItems.size.toFloat()
     } else 0f
@@ -667,7 +733,7 @@ fun ChecklistWizardScreen(
                 )
             }
 
-            // 4. Photo & Note Attachment Row
+            // 4. Photo (Camera + Gallery + Thumbnail) & Note Attachment Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
@@ -677,62 +743,177 @@ fun ChecklistWizardScreen(
                 Column(modifier = Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // Button A: Take Photo with Camera
+                        OutlinedButton(
+                            onClick = {
+                                val hasCamPerm = ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.CAMERA
+                                ) == PackageManager.PERMISSION_GRANTED
+                                if (hasCamPerm) {
+                                    val (tempFile, uri) = InspectionPhotoHelper.createTempCameraUri(context, currentItem.id)
+                                    pendingCameraTempFile = tempFile
+                                    cameraTakePictureLauncher.launch(uri)
+                                } else {
+                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("wizard_take_photo_camera_btn"),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(17.dp)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = when (language) {
+                                    AppLanguage.AR -> "التقاط بالكاميرا"
+                                    AppLanguage.FR -> "Prendre photo"
+                                    AppLanguage.EN -> "Take Photo"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Button B: Choose from Gallery
                         OutlinedButton(
                             onClick = {
                                 photoPickerLauncher.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
                             },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("wizard_pick_photo_gallery_btn"),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.AddAPhoto,
+                                imageVector = Icons.Default.PhotoLibrary,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(17.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
                             Text(
-                                text = if (photoLabel != null) {
-                                    when (language) {
-                                        AppLanguage.AR -> "تم إرفاق صورة ✓"
-                                        AppLanguage.FR -> "Photo jointe ✓"
-                                        AppLanguage.EN -> "Photo attached ✓"
-                                    }
-                                } else {
-                                    when (language) {
-                                        AppLanguage.AR -> "إرفاق صورة"
-                                        AppLanguage.FR -> "Ajouter photo"
-                                        AppLanguage.EN -> "Add Photo"
-                                    }
+                                text = when (language) {
+                                    AppLanguage.AR -> "من المعرض"
+                                    AppLanguage.FR -> "Galerie"
+                                    AppLanguage.EN -> "Gallery"
                                 },
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold
                             )
                         }
 
+                        // Button C: Note
                         OutlinedButton(
                             onClick = { showNoteEditor = !showNoteEditor },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("wizard_toggle_note_btn"),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.EditNote,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(17.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
                             Text(
                                 text = when (language) {
-                                    AppLanguage.AR -> "ملاحظة صوتية / نصية"
-                                    AppLanguage.FR -> "Note / Commentaire"
-                                    AppLanguage.EN -> "Add Note"
+                                    AppLanguage.AR -> "ملاحظة"
+                                    AppLanguage.FR -> "Note"
+                                    AppLanguage.EN -> "Note"
                                 },
-                                style = MaterialTheme.typography.labelMedium,
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+                    }
+
+                    // Real Photo Thumbnail Preview (only shown when a real file exists in internal storage)
+                    val thumbnailBitmap = remember(photoLabel) {
+                        InspectionPhotoHelper.loadThumbnailBitmap(photoLabel, maxDimensionPx = 320)
+                    }
+                    if (photoLabel != null && thumbnailBitmap != null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = Emerald50,
+                            border = BorderStroke(1.dp, Emerald200)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Image(
+                                    bitmap = thumbnailBitmap.asImageBitmap(),
+                                    contentDescription = "Attached inspection photo",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .border(1.dp, Emerald600, RoundedCornerShape(8.dp))
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "تم إرفاق وحفظ الصورة في ذاكرة التطبيق ✓"
+                                            AppLanguage.FR -> "Photo enregistrée dans le rapport & PDF ✓"
+                                            AppLanguage.EN -> "Photo saved to inspection & PDF ✓"
+                                        },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Emerald900
+                                    )
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "ستظهر بحجم مصغر داخل تقرير PDF"
+                                            AppLanguage.FR -> "Sera incluse en miniature dans le PDF"
+                                            AppLanguage.EN -> "Will be included at reduced size in the PDF"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Slate600
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        val oldPath = photoLabel
+                                        photoLabel = null
+                                        if (!oldPath.isNullOrBlank()) {
+                                            try {
+                                                File(oldPath).delete()
+                                            } catch (_: Exception) {}
+                                        }
+                                        onSaveAnswer(
+                                            currentItem,
+                                            currentSaved?.status ?: "UNCHECKED",
+                                            noteText,
+                                            null,
+                                            adaptiveItems.size
+                                        )
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteOutline,
+                                        contentDescription = "Remove photo",
+                                        tint = StatusErrorRed
+                                    )
+                                }
+                            }
                         }
                     }
 

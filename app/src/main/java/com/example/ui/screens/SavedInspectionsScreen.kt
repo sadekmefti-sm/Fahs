@@ -97,6 +97,7 @@ fun SavedInspectionsScreen(
     cloudUserEmail: String?,
     cloudUserName: String?,
     isCloudSyncing: Boolean,
+    isDeveloperModeEnabled: Boolean = false,
     onRefreshAuth: () -> Unit,
     onBackupToCloud: () -> Unit,
     onRestoreFromCloud: () -> Unit,
@@ -399,7 +400,7 @@ fun SavedInspectionsScreen(
                                 )
                             }
                         }
-                    } else if (inspections.size < 2) {
+                    } else if (isDeveloperModeEnabled && inspections.size < 2) {
                         OutlinedButton(
                             onClick = onSeedComparisonDemo,
                             modifier = Modifier
@@ -416,9 +417,9 @@ fun SavedInspectionsScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = when (language) {
-                                    AppLanguage.AR -> "إضافة سيارتين نموذجيتين لتجربة المقارنة جنباً إلى جنب"
-                                    AppLanguage.FR -> "Charger 2 voitures d'exemple pour tester le comparateur"
-                                    AppLanguage.EN -> "Load 2 sample cars to test Side-by-Side Comparison"
+                                    AppLanguage.AR -> "[وضع المطور] إضافة سيارتين نموذجيتين لتجربة المقارنة"
+                                    AppLanguage.FR -> "[DEV] Charger 2 voitures d'exemple pour tester le comparateur"
+                                    AppLanguage.EN -> "[DEV] Load 2 sample cars to test Side-by-Side Comparison"
                                 },
                                 color = Emerald800,
                                 fontWeight = FontWeight.SemiBold,

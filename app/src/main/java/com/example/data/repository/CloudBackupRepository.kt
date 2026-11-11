@@ -86,9 +86,9 @@ data class CloudInspectionBackup(
     val vin: String = "",
     val plateNumber: String = "",
     val inspectionMode: String = "FULL",
-    val status: String = "COMPLETED",
-    val overallScore: Long = 100L,
-    val verdict: String = "GOOD",
+    val status: String = "IN_PROGRESS",
+    val overallScore: Long = -1L,
+    val verdict: String = "INCOMPLETE",
     val totalEstimatedCostDzd: Long = 0L,
     val problemCount: Long = 0L,
     val answeredQuestions: Long = 0L,
@@ -109,8 +109,8 @@ data class CloudInspectionBackup(
         vin = vin,
         plateNumber = plateNumber,
         inspectionMode = inspectionMode,
-        overallScore = overallScore.toInt(),
-        verdict = verdict,
+        overallScore = if (overallScore in 0L..100L) overallScore.toInt() else null,
+        verdict = if (verdict == "INCOMPLETE" && overallScore !in 0L..100L) null else verdict,
         status = status,
         totalEstimatedCostDzd = totalEstimatedCostDzd.toInt(),
         notes = notes,
@@ -149,9 +149,9 @@ class CloudBackupRepository(
         val safeStatus = if (inspection.status.uppercase() in setOf("IN_PROGRESS", "COMPLETED")) {
             inspection.status.uppercase()
         } else "IN_PROGRESS"
-        val safeVerdict = if ((inspection.verdict ?: "GOOD").uppercase() in setOf("GOOD", "NEGOTIATE", "AVOID")) {
-            (inspection.verdict ?: "GOOD").uppercase()
-        } else "GOOD"
+        val safeVerdict = if ((inspection.verdict ?: "INCOMPLETE").uppercase() in setOf("GOOD", "NEGOTIATE", "AVOID", "INCOMPLETE")) {
+            (inspection.verdict ?: "INCOMPLETE").uppercase()
+        } else "INCOMPLETE"
 
         val payload = mapOf(
             "userId" to uid,
@@ -167,7 +167,7 @@ class CloudBackupRepository(
             "plateNumber" to inspection.plateNumber.take(40),
             "inspectionMode" to safeMode,
             "status" to safeStatus,
-            "overallScore" to (inspection.overallScore ?: 100).coerceIn(0, 100),
+            "overallScore" to (inspection.overallScore?.coerceIn(0, 100) ?: -1),
             "verdict" to safeVerdict,
             "totalEstimatedCostDzd" to inspection.totalEstimatedCostDzd.coerceAtLeast(0),
             "problemCount" to inspection.problemCount.coerceAtLeast(0),

@@ -10,6 +10,7 @@ object LanguagePreferences {
     private const val PREFS_NAME = "fahs_prefs"
     private const val KEY_LANGUAGE = "selected_language"
     private const val KEY_ONBOARDING_DONE = "onboarding_completed"
+    private const val KEY_DEVELOPER_MODE = "developer_mode_enabled"
 
     fun getInitialLanguage(context: Context): AppLanguage {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -40,5 +41,15 @@ object LanguagePreferences {
     fun setOnboardingCompleted(context: Context, completed: Boolean = true) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_ONBOARDING_DONE, completed).apply()
+    }
+
+    fun isDeveloperModeEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_DEVELOPER_MODE, false)
+    }
+
+    fun setDeveloperModeEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_DEVELOPER_MODE, enabled).apply()
     }
 }

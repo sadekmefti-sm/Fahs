@@ -111,35 +111,23 @@ fun IdentityVerificationScreen(
 ) {
     var vinInput by remember(inspection.vin) { mutableStateOf(inspection.vin) }
     var plateInput by remember(inspection.plateNumber) {
-        mutableStateOf(
-            inspection.plateNumber.ifBlank { "04821 1${(inspection.carYear % 100).toString().padStart(2, '0')} 16" }
-        )
+        mutableStateOf(inspection.plateNumber)
     }
 
-    // Three-way VIN match checkboxes
-    var matchStampedChassis by remember { mutableStateOf(true) }
-    var matchManufacturerPlate by remember { mutableStateOf(true) }
-    var matchCarteGrise by remember { mutableStateOf(true) }
+    // Three-way VIN match checkboxes (unchecked by default until verified by user)
+    var matchStampedChassis by remember { mutableStateOf(false) }
+    var matchManufacturerPlate by remember { mutableStateOf(false) }
+    var matchCarteGrise by remember { mutableStateOf(false) }
     var showTamperDetectionGuide by remember { mutableStateOf(false) }
 
-    // Camera Scan Dialog State
-    var showCameraScanModal by remember { mutableStateOf(false) }
-
-    // Runtime permission launcher for Camera OCR
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { _ ->
-        showCameraScanModal = true
-    }
-
-    // Algerian Administrative Document Checks
+    // Algerian Administrative Document Checks (unchecked by default until verified by user)
     val docChecks = remember {
         mutableStateMapOf(
-            "carte_grise_definitive" to true,
-            "controle_technique_valide" to true,
-            "assurance_vignette" to true,
-            "no_moudjahid_or_gage" to true,
-            "certificat_vente_commune" to true
+            "carte_grise_definitive" to false,
+            "controle_technique_valide" to false,
+            "assurance_vignette" to false,
+            "no_moudjahid_or_gage" to false,
+            "certificat_vente_commune" to false
         )
     }
 
@@ -156,19 +144,6 @@ fun IdentityVerificationScreen(
             carDeclaredYear = inspection.carYear,
             vinResult = vinResult,
             plateResult = plateResult
-        )
-    }
-
-    if (showCameraScanModal) {
-        CameraVinOcrDialog(
-            carBrand = inspection.carBrand,
-            carYear = inspection.carYear,
-            language = language,
-            onVinCaptured = { capturedVin ->
-                vinInput = capturedVin
-                showCameraScanModal = false
-            },
-            onDismiss = { showCameraScanModal = false }
         )
     }
 
@@ -346,58 +321,6 @@ fun IdentityVerificationScreen(
                                 unfocusedBorderColor = Slate300
                             )
                         )
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Camera OCR Scan Button & Preset Sample Button
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = {
-                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("scan_vin_camera_btn"),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Emerald700)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CameraAlt,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = when (language) {
-                                        AppLanguage.AR -> "مسح بالكاميرا (OCR)"
-                                        AppLanguage.FR -> "Scanner par Caméra"
-                                        AppLanguage.EN -> "Camera OCR Scan"
-                                    },
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    vinInput = generateSampleVinForBrand(inspection.carBrand, inspection.carYear)
-                                },
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Text(
-                                    text = when (language) {
-                                        AppLanguage.AR -> "مثال للتجربة"
-                                        AppLanguage.FR -> "Exemple VIN"
-                                        AppLanguage.EN -> "Sample VIN"
-                                    },
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
 
                         // Forbidden character warning (I, O, Q never allowed in VINs)
                         if (vinResult != null && vinResult.forbiddenCharactersFound.isNotEmpty()) {
@@ -989,148 +912,6 @@ private fun CheckableIdentityRow(
             lineHeight = 18.sp
         )
     }
-}
-
-@Composable
-private fun CameraVinOcrDialog(
-    carBrand: String,
-    carYear: Int,
-    language: AppLanguage,
-    onVinCaptured: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val presetVin = remember(carBrand, carYear) {
-        generateSampleVinForBrand(carBrand, carYear)
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.QrCodeScanner,
-                    contentDescription = null,
-                    tint = Emerald700
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = when (language) {
-                        AppLanguage.AR -> "الماسح الضوئي لرقم الشاسيه (OCR)"
-                        AppLanguage.FR -> "Scanner VIN par Caméra (OCR)"
-                        AppLanguage.EN -> "Camera VIN Text Scanner (OCR)"
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Simulated Viewfinder Frame
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(130.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Slate900)
-                        .border(2.dp, Emerald600, RoundedCornerShape(14.dp))
-                        .padding(14.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = when (language) {
-                                AppLanguage.AR -> "وجه الكاميرا نحو الزجاج الأمامي أو ملصق الباب"
-                                AppLanguage.FR -> "Cadrez le VIN sur le pare-brise ou le montant de porte"
-                                AppLanguage.EN -> "Align the 17-character VIN on windscreen or door sticker"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Emerald200
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.Black.copy(alpha = 0.6f),
-                            border = BorderStroke(1.dp, Emerald400)
-                        ) {
-                            Text(
-                                text = presetVin,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                            )
-                        }
-                    }
-                }
-
-                Text(
-                    text = when (language) {
-                        AppLanguage.AR -> "تم التعرف تلقائياً على 17 رمزاً بدون إنترنت (On-Device OCR):"
-                        AppLanguage.FR -> "Reconnaissance optique hors-ligne (17 caractères détectés) :"
-                        AppLanguage.EN -> "Offline on-device text recognition (17 characters detected):"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Slate600
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onVinCaptured(presetVin) },
-                colors = ButtonDefaults.buttonColors(containerColor = Emerald700)
-            ) {
-                Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = when (language) {
-                        AppLanguage.AR -> "استخدام هذا الرقم"
-                        AppLanguage.FR -> "Utiliser ce VIN"
-                        AppLanguage.EN -> "Use Scanned VIN"
-                    },
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    text = when (language) {
-                        AppLanguage.AR -> "إلغاء"
-                        AppLanguage.FR -> "Annuler"
-                        AppLanguage.EN -> "Cancel"
-                    },
-                    color = Slate600
-                )
-            }
-        },
-        containerColor = Color.White,
-        shape = RoundedCornerShape(18.dp)
-    )
-}
-
-private fun generateSampleVinForBrand(brand: String, year: Int): String {
-    val yearChar = when (year) {
-        2010 -> 'A'; 2011 -> 'B'; 2012 -> 'C'; 2013 -> 'D'; 2014 -> 'E'
-        2015 -> 'F'; 2016 -> 'G'; 2017 -> 'H'; 2018 -> 'J'; 2019 -> 'K'
-        2020 -> 'L'; 2021 -> 'M'; 2022 -> 'N'; 2023 -> 'P'; 2024 -> 'R'
-        else -> 'J'
-    }
-    val wmi = when (brand.lowercase()) {
-        "renault" -> "VF1"
-        "dacia" -> "UU1"
-        "peugeot" -> "VF3"
-        "citroën", "citroen" -> "VF7"
-        "volkswagen" -> "WVW"
-        "seat" -> "VSS"
-        "hyundai" -> "KMH"
-        "kia" -> "KNA"
-        "toyota" -> "JTD"
-        "skoda" -> "TMB"
-        else -> "VF1"
-    }
-    return "${wmi}5RJL0A${yearChar}8492011"
 }
 
 private fun getStampedVinLocationForCar(brand: String, model: String, lang: AppLanguage): String {

@@ -81,6 +81,24 @@ class ExampleRobolectricTest {
     assertNotNull(dsgFault)
     assertTrue(dsgFault.titleFr.contains("DSG7"))
     assertTrue(dsgFault.titleAr.contains("DSG7"))
+
+    // 5. Phase 1 checks: unknown DTC has 0 cost, empty checklist has null score ("INCOMPLETE"), simulated scan is flagged
+    val unknownDtc = ObdDiagnosticEngine.lookupDtc("P9999")
+    assertEquals(0, unknownDtc.minCostDzd)
+    assertEquals(0, unknownDtc.maxCostDzd)
+
+    val (emptyScore, emptyVerdict, _) = ChecklistEngine.calculateScoreAndVerdict(
+      answers = emptyMap(),
+      items = golfTdiChecklist
+    )
+    assertEquals(null, emptyScore)
+    assertEquals("INCOMPLETE", emptyVerdict)
+
+    val simScan = ObdDiagnosticEngine.generateSimulatedScan(
+      com.example.domain.ObdSimulatorProfile.HEALTHY,
+      ""
+    )
+    assertTrue(simScan.isSimulated)
   }
 
   @Test

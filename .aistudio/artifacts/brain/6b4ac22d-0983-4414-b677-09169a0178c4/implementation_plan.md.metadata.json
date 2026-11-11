@@ -1,6 +1,0 @@
-{
-  "summary":  "Comprehensive architecture and implementation plan for Fahs (فحص), an offline-first Algerian used car inspection assistant built with Jetpack Compose. Covers multi-language support (Arabic RTL, French, English), Emerald Green & Slate outdoor styling, adaptive physical walkaround checklist, Algerian VIN and plate decoding, ELM327 OBD2 scanner with anti-fraud clearing detection and simulator, and scored PDF report generation across 9 phased milestones.",
-  "updatedAt":  "2026-11-10T08:28:12.554937865Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

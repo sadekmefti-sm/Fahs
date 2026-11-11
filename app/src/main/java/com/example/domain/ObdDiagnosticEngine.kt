@@ -130,7 +130,8 @@ data class ObdScanResult(
     val dtcList: List<DtcInfo>,
     val freezeFrameSummary: String?,
     val liveParameters: List<LiveParameterGauge>,
-    val isRecentlyClearedFraudAlert: Boolean
+    val isRecentlyClearedFraudAlert: Boolean,
+    val isSimulated: Boolean = false
 )
 
 /**
@@ -259,11 +260,11 @@ object ObdDiagnosticEngine {
             titleFr = "Code défaut calculateur ($clean)",
             titleAr = "كود عطل مسجل في الكمبيوتر ($clean)",
             titleEn = "Engine Control Unit Fault Code ($clean)",
-            plainExplanationFr = "Ce code indique une anomalie relevée par un capteur moteur ou antipollution. Demandez une vérification mécanique ciblée.",
-            plainExplanationAr = "يشير هذا الكود إلى قراءة غير طبيعية من أحد حساسات المحرك. يُنصح بفحصه عند مختص.",
-            plainExplanationEn = "This code indicates an abnormal reading recorded by an engine or emissions sensor.",
-            minCostDzd = 10000,
-            maxCostDzd = 45000
+            plainExplanationFr = "Demandez à un mécanicien ce que ce code signifie sur cette voiture.",
+            plainExplanationAr = "اسأل ميكانيكيًا عن معنى هذا الكود في هذه السيارة.",
+            plainExplanationEn = "Ask a mechanic what this code means on this car.",
+            minCostDzd = 0,
+            maxCostDzd = 0
         )
     }
 
@@ -389,13 +390,13 @@ object ObdDiagnosticEngine {
         profile: ObdSimulatorProfile,
         expectedVin: String
     ): ObdScanResult {
-        val cleanVin = expectedVin.ifBlank { "VF15RJL0A58492011" }
+        val cleanVin = expectedVin.trim().ifBlank { null }
         return when (profile) {
             ObdSimulatorProfile.HEALTHY -> ObdScanResult(
                 isCommunicationSuccess = true,
-                adapterVersion = "ELM327 v1.5 (Compatible SPP)",
-                isCloneAdapter = true,
-                detectedProtocol = "ISO 15765-4 CAN (11 bit ID, 500 kbaud)",
+                adapterVersion = "SIMULATOR ONLY",
+                isCloneAdapter = false,
+                detectedProtocol = "SIMULATED CAN",
                 milCommandedOn = false,
                 storedDtcCount = 0,
                 incompleteReadinessMonitors = 0,
@@ -414,14 +415,15 @@ object ObdDiagnosticEngine {
                     LiveParameterGauge("trim", "Correction Carburant (Fuel Trim)", "تصحيح خليط الوقود (STFT/LTFT)", "Short/Long Fuel Trim", "+1.5 %", "-8% à +8%", "GREEN"),
                     LiveParameterGauge("o2", "Sonde Lambda (O2 Sensor)", "حساس الأكسجين (Sonde Lambda)", "O2 Sensor Activity", "0.68 V (Actif)", "0.1 - 0.9 V", "GREEN")
                 ),
-                isRecentlyClearedFraudAlert = false
+                isRecentlyClearedFraudAlert = false,
+                isSimulated = true
             )
 
             ObdSimulatorProfile.STORED_FAULTS -> ObdScanResult(
                 isCommunicationSuccess = true,
-                adapterVersion = "ELM327 v1.5 (Compatible SPP)",
-                isCloneAdapter = true,
-                detectedProtocol = "ISO 15765-4 CAN (11 bit ID, 500 kbaud)",
+                adapterVersion = "SIMULATOR ONLY",
+                isCloneAdapter = false,
+                detectedProtocol = "SIMULATED CAN",
                 milCommandedOn = true,
                 storedDtcCount = 3,
                 incompleteReadinessMonitors = 1,
@@ -444,14 +446,15 @@ object ObdDiagnosticEngine {
                     LiveParameterGauge("trim", "Correction Carburant (Fuel Trim)", "تصحيح خليط الوقود (STFT/LTFT)", "Short/Long Fuel Trim", "+16.4 % (Riche/Fuite)", "-8% à +8%", "RED"),
                     LiveParameterGauge("o2", "Sonde Lambda (O2 Sensor)", "حساس الأكسجين (Sonde Lambda)", "O2 Sensor Activity", "0.18 V (Lent)", "0.1 - 0.9 V", "ORANGE")
                 ),
-                isRecentlyClearedFraudAlert = false
+                isRecentlyClearedFraudAlert = false,
+                isSimulated = true
             )
 
             ObdSimulatorProfile.RECENTLY_CLEARED_FRAUD -> ObdScanResult(
                 isCommunicationSuccess = true,
-                adapterVersion = "ELM327 v2.1 (Clone Détecté - Mode Tolérant)",
-                isCloneAdapter = true,
-                detectedProtocol = "ISO 14230-4 KWP (fast init)",
+                adapterVersion = "SIMULATOR ONLY",
+                isCloneAdapter = false,
+                detectedProtocol = "SIMULATED KWP",
                 milCommandedOn = false,
                 storedDtcCount = 0,
                 incompleteReadinessMonitors = 5,
@@ -471,13 +474,14 @@ object ObdDiagnosticEngine {
                     LiveParameterGauge("volt", "Tension Batterie & Alternateur", "فولتية البطارية والدينامو", "Alternator Charging Voltage", "13.9 V", "13.6 - 14.5 V", "GREEN"),
                     LiveParameterGauge("trim", "Correction Carburant (Fuel Trim)", "تصحيح خليط الوقود (STFT/LTFT)", "Short/Long Fuel Trim", "+11.2 %", "-8% à +8%", "ORANGE")
                 ),
-                isRecentlyClearedFraudAlert = true
+                isRecentlyClearedFraudAlert = true,
+                isSimulated = true
             )
 
             ObdSimulatorProfile.NO_ECU_RESPONSE -> ObdScanResult(
                 isCommunicationSuccess = false,
-                adapterVersion = "ELM327 v1.5 (Compatible SPP)",
-                isCloneAdapter = true,
+                adapterVersion = "SIMULATOR ONLY",
+                isCloneAdapter = false,
                 detectedProtocol = "UNABLE TO CONNECT (NO OBD2 RESPONSE)",
                 milCommandedOn = false,
                 storedDtcCount = 0,
@@ -491,14 +495,15 @@ object ObdDiagnosticEngine {
                 dtcList = emptyList(),
                 freezeFrameSummary = null,
                 liveParameters = emptyList(),
-                isRecentlyClearedFraudAlert = false
+                isRecentlyClearedFraudAlert = false,
+                isSimulated = true
             )
         }
     }
 
     /**
      * Executes a full READ-ONLY diagnostic scan over any [ObdTransport] (such as [BluetoothElm327Transport]).
-     * Tolerates cheap Algerian ELM327 v1.5 / v2.1 clone adapters.
+     * Never invents fallback readings or copies the user's VIN when the car does not respond.
      */
     suspend fun executeRealObdScan(
         transport: ObdTransport,
@@ -516,23 +521,45 @@ object ObdDiagnosticEngine {
         val adapterVer = if (atzResp.contains("ELM", ignoreCase = true)) {
             atzResp
         } else {
-            transport.sendCommand("AT I").ifBlank { "ELM327 Compatible SPP" }
+            transport.sendCommand("AT I").ifBlank { "Non communiqué" }
         }
         val isClone = adapterVer.contains("1.5") || adapterVer.contains("2.1")
 
         onProgress("Lecture de l'état moteur et du voyant Check Engine (PID 0101)...")
         val pid0101 = transport.sendCommand("0101")
         if (pid0101.contains("UNABLE TO CONNECT", ignoreCase = true) ||
+            pid0101.contains("NO DATA", ignoreCase = true) ||
             pid0101.contains("ERROR", ignoreCase = true) ||
             pid0101.isBlank()
         ) {
-            return generateSimulatedScan(ObdSimulatorProfile.NO_ECU_RESPONSE, expectedVin).copy(
+            return ObdScanResult(
+                isCommunicationSuccess = false,
                 adapterVersion = adapterVer,
-                isCloneAdapter = isClone
+                isCloneAdapter = isClone,
+                detectedProtocol = "Aucune réponse du calculateur (No ECU response)",
+                milCommandedOn = false,
+                storedDtcCount = 0,
+                incompleteReadinessMonitors = 0,
+                totalReadinessMonitors = 0,
+                distanceSinceCodesClearedKm = 0,
+                warmupsSinceCodesCleared = 0,
+                distanceWithMilOnKm = 0,
+                timeSinceCodesClearedMin = 0,
+                ecuVin = null,
+                dtcList = emptyList(),
+                freezeFrameSummary = null,
+                liveParameters = emptyList(),
+                isRecentlyClearedFraudAlert = false,
+                isSimulated = false
             )
         }
 
-        val protocolResp = transport.sendCommand("AT DP").ifBlank { "ISO 15765-4 CAN" }
+        val rawProtocol = transport.sendCommand("AT DP").trim()
+        val protocolResp = if (rawProtocol.isBlank() || rawProtocol.contains("?")) {
+            "Non disponible sur cette voiture"
+        } else {
+            rawProtocol
+        }
         val (milOn, dtcCount, incompleteMonitors) = parsePid01Status(pid0101)
 
         onProgress("Lecture des codes défauts stockés, en attente et permanents (Modes 03 / 07 / 0A)...")
@@ -549,12 +576,24 @@ object ObdDiagnosticEngine {
 
         onProgress("Lecture des paramètres moteur en direct (Température, Ralenti, Tension)...")
         val coolantBytes = extractPayloadBytes(transport.sendCommand("0105"), "41", "05")
-        val coolantC = if (coolantBytes.isNotEmpty()) coolantBytes[0] - 40 else 88
+        val coolantC: Int? = if (coolantBytes.isNotEmpty()) coolantBytes[0] - 40 else null
 
         val rpmBytes = extractPayloadBytes(transport.sendCommand("010C"), "41", "0C")
-        val rpmVal = if (rpmBytes.size >= 2) ((rpmBytes[0] * 256) + rpmBytes[1]) / 4 else 790
+        val rpmVal: Int? = if (rpmBytes.size >= 2) ((rpmBytes[0] * 256) + rpmBytes[1]) / 4 else null
 
-        val voltRaw = transport.sendCommand("AT RV")
+        val voltRaw = transport.sendCommand("AT RV").trim()
+        val parsedVolt: Double? = if (voltRaw.isNotBlank() &&
+            !voltRaw.contains("?") &&
+            !voltRaw.contains("NO DATA", ignoreCase = true) &&
+            !voltRaw.contains("ERROR", ignoreCase = true)
+        ) {
+            Regex("""(\d+(?:[.,]\d+)?)""").find(voltRaw)?.groupValues?.getOrNull(1)
+                ?.replace(',', '.')
+                ?.toDoubleOrNull()
+                ?.takeIf { it in 5.0..20.0 }
+        } else null
+
+        val unavailableLabel = "Non disponible sur cette voiture"
 
         val liveGauges = listOf(
             LiveParameterGauge(
@@ -562,27 +601,41 @@ object ObdDiagnosticEngine {
                 nameFr = "Température Liquide (Coolant)",
                 nameAr = "حرارة ماء التبريد",
                 nameEn = "Coolant Temperature",
-                valueText = "$coolantC °C",
+                valueText = if (coolantC != null) "$coolantC °C" else unavailableLabel,
                 normalRangeText = "82 - 96 °C",
-                status = if (coolantC in 75..99) "GREEN" else if (coolantC > 102) "RED" else "ORANGE"
+                status = when {
+                    coolantC == null -> "UNAVAILABLE"
+                    coolantC in 75..99 -> "GREEN"
+                    coolantC > 102 -> "RED"
+                    else -> "ORANGE"
+                }
             ),
             LiveParameterGauge(
                 id = "rpm",
                 nameFr = "Régime Ralenti (Idle RPM)",
                 nameAr = "سرعة دوران المحرك (Ralenti)",
                 nameEn = "Idle Engine Speed",
-                valueText = "$rpmVal tr/min",
+                valueText = if (rpmVal != null) "$rpmVal tr/min" else unavailableLabel,
                 normalRangeText = "700 - 880 tr/min",
-                status = if (rpmVal in 680..900) "GREEN" else "ORANGE"
+                status = when {
+                    rpmVal == null -> "UNAVAILABLE"
+                    rpmVal in 680..900 -> "GREEN"
+                    else -> "ORANGE"
+                }
             ),
             LiveParameterGauge(
                 id = "volt",
                 nameFr = "Tension Batterie & Alternateur",
                 nameAr = "فولتية البطارية والدينامو",
                 nameEn = "Alternator Charging Voltage",
-                valueText = voltRaw.ifBlank { "14.0 V" },
-                normalRangeText = "13.6 - 14.5 V",
-                status = "GREEN"
+                valueText = if (parsedVolt != null) String.format(java.util.Locale.US, "%.1f V", parsedVolt) else unavailableLabel,
+                normalRangeText = "13.2 - 14.6 V",
+                status = when {
+                    parsedVolt == null -> "UNAVAILABLE"
+                    parsedVolt in 13.2..14.6 -> "GREEN"
+                    parsedVolt in 12.0..13.19 || parsedVolt in 14.61..15.0 -> "ORANGE"
+                    else -> "RED"
+                }
             )
         )
 
@@ -606,11 +659,12 @@ object ObdDiagnosticEngine {
             warmupsSinceCodesCleared = warmups,
             distanceWithMilOnKm = distMilKm,
             timeSinceCodesClearedMin = timeSinceClearMin,
-            ecuVin = expectedVin.ifBlank { null },
+            ecuVin = null,
             dtcList = allDtcs,
             freezeFrameSummary = null,
             liveParameters = liveGauges,
-            isRecentlyClearedFraudAlert = isFraudAlert
+            isRecentlyClearedFraudAlert = isFraudAlert,
+            isSimulated = false
         )
     }
 }

@@ -144,7 +144,7 @@ fun ObdScanResultSection(
         }
 
         if (!scanResult.isCommunicationSuccess) {
-            if (hasActiveInspection) {
+            if (hasActiveInspection && !scanResult.isSimulated) {
                 SaveObdToInspectionButton(
                     language = language,
                     onClick = onSaveToInspection
@@ -194,8 +194,8 @@ fun ObdScanResultSection(
         // 7. Brand-Specific Secondary ECU Odometer Architecture Info
         SecondaryEcuMileageInfoCard(language = language)
 
-        // 8. Save Scan to Active Inspection
-        if (hasActiveInspection) {
+        // 8. Save Scan to Active Inspection ( strictly blocked for simulated results )
+        if (hasActiveInspection && !scanResult.isSimulated) {
             SaveObdToInspectionButton(
                 language = language,
                 onClick = onSaveToInspection
@@ -565,12 +565,14 @@ private fun DtcFaultListCard(
                                     )
                                 }
 
-                                Text(
-                                    text = "${dtc.minCostDzd / 1000}k - ${dtc.maxCostDzd / 1000}k DZD",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = StatusErrorRed
-                                )
+                                if (dtc.maxCostDzd > 0) {
+                                    Text(
+                                        text = "${dtc.minCostDzd / 1000}k - ${dtc.maxCostDzd / 1000}k DZD",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StatusErrorRed
+                                    )
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(6.dp))
@@ -722,11 +724,13 @@ private fun LiveGaugesCard(
                     val badgeBg = when (gauge.status) {
                         "GREEN" -> StatusPassGreenContainer
                         "RED" -> StatusErrorRedContainer
+                        "UNAVAILABLE" -> Slate100
                         else -> StatusWarningAmberContainer
                     }
                     val badgeFg = when (gauge.status) {
                         "GREEN" -> StatusPassGreenOnContainer
                         "RED" -> StatusErrorRedOnContainer
+                        "UNAVAILABLE" -> Slate700
                         else -> StatusWarningAmberOnContainer
                     }
                     Surface(

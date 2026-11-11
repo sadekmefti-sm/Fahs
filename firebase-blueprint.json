@@ -1,102 +1,111 @@
 {
   "entities": {
-    "InspectionBackup": {
-      "title": "InspectionBackup",
-      "description": "Cloud backup of a used car inspection report owned by an authenticated user.",
+    "CloudInspectionBackup": {
+      "title": "CloudInspectionBackup",
+      "description": "Private cloud backup of a user's used-car inspection report in Fahs",
       "type": "object",
       "properties": {
         "userId": {
           "type": "string",
-          "description": "Authenticated user UID owning this inspection backup."
+          "description": "Firebase Auth UID of the inspection owner"
         },
         "localId": {
           "type": "integer",
-          "description": "Local Room database ID of the inspection."
+          "description": "Local Room primary key id of the inspection"
         },
         "carBrand": {
           "type": "string",
-          "description": "Vehicle brand name (e.g., Renault, Peugeot, Volkswagen)."
+          "description": "Car brand name (e.g., Renault, Peugeot, Dacia)"
         },
         "carModel": {
           "type": "string",
-          "description": "Vehicle model name (e.g., Clio 4, Symbol, 208)."
+          "description": "Car model name (e.g., Symbol, 208, Duster)"
         },
         "carGeneration": {
           "type": "string",
-          "description": "Vehicle generation or phase."
+          "description": "Generation or trim label"
         },
         "carYear": {
           "type": "integer",
-          "description": "Model or registration year."
+          "description": "Manufacturing year"
         },
         "fuelType": {
           "type": "string",
-          "description": "Fuel type (ESSENCE, DIESEL, GPL, HYBRIDE)."
+          "description": "Fuel type (ESSENCE, DIESEL, GPL, HYBRIDE)"
         },
         "gearboxType": {
           "type": "string",
-          "description": "Transmission type (MANUELLE, AUTOMATIQUE)."
+          "description": "Transmission type (MANUELLE, AUTOMATIQUE)"
         },
         "engineDescription": {
           "type": "string",
-          "description": "Engine displacement and power description."
+          "description": "Engine code or displacement"
         },
         "vin": {
           "type": "string",
-          "description": "17-character Vehicle Identification Number."
+          "description": "17-character Vehicle Identification Number"
         },
         "plateNumber": {
           "type": "string",
-          "description": "Algerian registration plate number."
+          "description": "Algerian registration plate number"
         },
         "inspectionMode": {
           "type": "string",
-          "enum": ["QUICK", "FULL"],
-          "description": "Inspection depth mode."
+          "description": "QUICK or FULL",
+          "enum": [
+            "QUICK",
+            "FULL"
+          ]
         },
         "status": {
           "type": "string",
-          "enum": ["IN_PROGRESS", "COMPLETED"],
-          "description": "Current status of the inspection."
+          "description": "IN_PROGRESS or COMPLETED",
+          "enum": [
+            "IN_PROGRESS",
+            "COMPLETED"
+          ]
         },
         "overallScore": {
           "type": "integer",
-          "description": "Calculated 0-100 vehicle score."
+          "description": "Inspection score from 0 to 100, or -1 if incomplete"
         },
         "verdict": {
           "type": "string",
-          "enum": ["GOOD", "NEGOTIATE", "AVOID"],
-          "description": "Overall inspection verdict."
+          "description": "GOOD, NEGOTIATE, AVOID, or INCOMPLETE",
+          "enum": [
+            "GOOD",
+            "NEGOTIATE",
+            "AVOID",
+            "INCOMPLETE"
+          ]
         },
         "totalEstimatedCostDzd": {
           "type": "integer",
-          "description": "Estimated total repair cost in Algerian Dinars (DZD)."
+          "description": "Total estimated repair cost in Algerian Dinars"
         },
         "problemCount": {
           "type": "integer",
-          "description": "Number of problems recorded."
+          "description": "Number of problems found"
         },
         "answeredQuestions": {
           "type": "integer",
-          "description": "Number of answered checklist questions."
+          "description": "Number of checklist items answered"
         },
         "totalQuestions": {
           "type": "integer",
-          "description": "Total number of applicable checklist questions."
+          "description": "Total checklist items in the inspection"
         },
         "notes": {
           "type": "string",
-          "description": "Summary notes including paperwork and OBD2 scan notes."
+          "description": "Summary notes and diagnostic findings"
         },
         "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server timestamp when backup was created (FieldValue.serverTimestamp())."
+          "type": "timestamp",
+          "description": "Creation timestamp"
         },
         "updatedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server timestamp when backup was last updated (FieldValue.serverTimestamp())."
+          "type": "timestamp",
+          "description": "Last cloud backup timestamp"
         }
       },
       "required": [
@@ -104,9 +113,13 @@
         "localId",
         "carBrand",
         "carModel",
+        "carGeneration",
         "carYear",
         "fuelType",
         "gearboxType",
+        "engineDescription",
+        "vin",
+        "plateNumber",
         "inspectionMode",
         "status",
         "overallScore",
@@ -115,17 +128,57 @@
         "problemCount",
         "answeredQuestions",
         "totalQuestions",
+        "notes",
         "createdAt",
         "updatedAt"
+      ]
+    },
+    "ShopSettings": {
+      "title": "ShopSettings",
+      "description": "Public read-only configuration document containing WhatsApp number, contact email, dongle price, stock availability, and wilaya delivery fees",
+      "type": "object",
+      "properties": {
+        "whatsappNumber": {
+          "type": "string",
+          "description": "Official WhatsApp phone number for dongle orders"
+        },
+        "contactEmail": {
+          "type": "string",
+          "description": "Official contact email address"
+        },
+        "donglePriceDzd": {
+          "type": "integer",
+          "description": "Price of the ELM327 dongle in DZD"
+        },
+        "inStock": {
+          "type": "boolean",
+          "description": "Whether the dongle is currently in stock"
+        },
+        "deliveryFees": {
+          "type": "array",
+          "description": "List of wilaya delivery fees for home and stop-desk delivery"
+        }
+      },
+      "required": [
+        "whatsappNumber",
+        "contactEmail",
+        "donglePriceDzd",
+        "inStock"
       ]
     }
   },
   "firestore": {
     "/users/{userId}/inspections/{inspectionId}": {
       "schema": {
-        "$ref": "#/entities/InspectionBackup"
+        "$ref": "#/entities/CloudInspectionBackup"
       },
-      "description": "Per-user subcollection storing backed-up vehicle inspections."
+      "description": "User-scoped private collection of backed-up vehicle inspections"
+    },
+    "/shop_settings/{docId}": {
+      "schema": {
+        "$ref": "#/entities/ShopSettings"
+      },
+      "description": "Public read-only shop and contact settings managed via the Firebase Console"
     }
   }
 }

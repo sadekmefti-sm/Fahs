@@ -65,6 +65,8 @@ fun MainScreen(
     val cloudUserEmail by viewModel.cloudUserEmail.collectAsStateWithLifecycle()
     val cloudUserName by viewModel.cloudUserName.collectAsStateWithLifecycle()
     val isCloudSyncing by viewModel.isCloudSyncing.collectAsStateWithLifecycle()
+    val shopSettings by viewModel.shopSettings.collectAsStateWithLifecycle()
+    val isDeveloperModeEnabled by viewModel.isDeveloperModeEnabled.collectAsStateWithLifecycle()
 
     val context = androidx.compose.ui.platform.LocalContext.current
     var showSplash by androidx.compose.runtime.saveable.rememberSaveable {
@@ -107,6 +109,27 @@ fun MainScreen(
         com.example.ui.components.OnboardingAndReleaseDialog(
             language = currentLanguage,
             initialSection = activeOnboardingSection,
+            shopSettings = shopSettings,
+            isDeveloperModeEnabled = isDeveloperModeEnabled,
+            onToggleDeveloperMode = { enabled ->
+                viewModel.setDeveloperModeEnabled(enabled)
+                scope.launch {
+                    val msg = if (enabled) {
+                        when (currentLanguage) {
+                            AppLanguage.AR -> "تم تفعيل وضع المطور (المحاكي والبيانات التجريبية)"
+                            AppLanguage.FR -> "Mode Développeur activé (Simulateur & données démo)"
+                            AppLanguage.EN -> "Developer Mode enabled (Simulator & demo data)"
+                        }
+                    } else {
+                        when (currentLanguage) {
+                            AppLanguage.AR -> "تم إيقاف وضع المطور"
+                            AppLanguage.FR -> "Mode Développeur désactivé"
+                            AppLanguage.EN -> "Developer Mode disabled"
+                        }
+                    }
+                    snackbarHostState.showSnackbar(msg)
+                }
+            },
             onSelectLanguage = { lang -> viewModel.setLanguage(lang) },
             onDismiss = {
                 com.example.core.i18n.LanguagePreferences.setOnboardingCompleted(context, true)
@@ -258,6 +281,7 @@ fun MainScreen(
                         inspections = inspections,
                         completedCount = completedCount,
                         inProgressCount = inProgressCount,
+                        shopSettings = shopSettings,
                         showWelcomeCard = showWelcomeBanner,
                         onDismissWelcomeCard = {
                             com.example.core.i18n.LanguagePreferences.setOnboardingCompleted(context, true)
@@ -370,10 +394,18 @@ fun MainScreen(
                             onFinishInspection = { score, verdict, totalRepairDzd ->
                                 viewModel.finishActiveInspection(score, verdict, totalRepairDzd)
                                 scope.launch {
-                                    val msg = when (currentLanguage) {
-                                        AppLanguage.AR -> "اكتمل الفحص! النتيجة: $score/100"
-                                        AppLanguage.FR -> "Inspection terminée ! Score : $score/100"
-                                        AppLanguage.EN -> "Inspection finished! Score: $score/100"
+                                    val msg = if (score != null) {
+                                        when (currentLanguage) {
+                                            AppLanguage.AR -> "اكتمل الفحص! النتيجة: $score/100"
+                                            AppLanguage.FR -> "Inspection terminée ! Score : $score/100"
+                                            AppLanguage.EN -> "Inspection finished! Score: $score/100"
+                                        }
+                                    } else {
+                                        when (currentLanguage) {
+                                            AppLanguage.AR -> "الفحص غير مكتمل بعد (أجب على جميع النقاط الحرجة و70% من الأسئلة لحساب النتيجة)"
+                                            AppLanguage.FR -> "Inspection incomplète (répondez à tous les points critiques et 70% des questions pour calculer le score)"
+                                            AppLanguage.EN -> "Inspection incomplete (answer all critical items and 70% of questions to calculate a score)"
+                                        }
                                     }
                                     snackbarHostState.showSnackbar(msg)
                                 }
@@ -424,6 +456,7 @@ fun MainScreen(
                         cloudUserEmail = cloudUserEmail,
                         cloudUserName = cloudUserName,
                         isCloudSyncing = isCloudSyncing,
+                        isDeveloperModeEnabled = isDeveloperModeEnabled,
                         onRefreshAuth = { viewModel.refreshAuthState() },
                         onBackupToCloud = {
                             viewModel.backupAllInspectionsToCloud { _, msg ->
@@ -475,6 +508,7 @@ fun MainScreen(
                         language = currentLanguage,
                         activeInspection = activeInspection,
                         initialScanResult = lastObdScanResult,
+                        isDeveloperModeEnabled = isDeveloperModeEnabled,
                         onSaveScanToInspection = { scanResult, milBulbLit ->
                             viewModel.saveObdScanToActiveInspection(
                                 scanResult = scanResult,

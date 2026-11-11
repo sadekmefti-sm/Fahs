@@ -82,23 +82,39 @@ object ChecklistEngine {
     }
 
     /**
-     * Calculates an objective 0..100 score and 3-tier verdict from answered items:
-     * - Critical findings cap the maximum possible score to 45 ("AVOID" / "NEGOTIATE")
-     * - Returns triple of (score: Int, verdict: String, totalRepairEstimateDzd: Int)
+     * Minimum share of applicable checklist items (70%) that must be answered, in addition to
+     * 100% of CRITICAL items in the chosen mode, before a score or verdict is calculated.
      */
-    fun calculateScoreAndVerdict(
+    const val MINIMUM_ANSWERED_SHARE = 0.70
+
+    data class ScoreEvaluation(
+        val overallScore: Int?, // null when minimum threshold or critical items are not all answered
+        val verdict: String, // "GOOD", "NEGOTIATE", "AVOID", or "INCOMPLETE"
+        val totalEstimatedRepairDzd: Int,
+        val answeredCount: Int,
+        val uncheckedCount: Int,
+        val totalCount: Int,
+        val minimumRequiredCount: Int,
+        val uncheckedCriticalItems: List<ChecklistItemDefinition>,
+        val isMinimumThresholdMet: Boolean
+    )
+
+    fun evaluateChecklist(
         answers: Map<String, String>, // itemId -> GOOD, PROBLEM, UNCHECKED
         items: List<ChecklistItemDefinition>
-    ): Triple<Int, String, Int> {
+    ): ScoreEvaluation {
         var totalMaxPoints = 0
         var deductedPoints = 0
         var hasCriticalProblem = false
         var importantProblemCount = 0
         var totalEstimatedRepairDzd = 0
+        var answeredCount = 0
+        val uncheckedCritical = mutableListOf<ChecklistItemDefinition>()
 
         for (item in items) {
             val status = answers[item.id] ?: "UNCHECKED"
             if (status == "GOOD" || status == "PROBLEM") {
+                answeredCount++
                 totalMaxPoints += item.severity.weight
                 if (status == "PROBLEM") {
                     deductedPoints += item.severity.weight
@@ -109,17 +125,35 @@ object ChecklistEngine {
                         importantProblemCount++
                     }
                 }
+            } else if (item.severity == ItemSeverity.CRITICAL) {
+                uncheckedCritical.add(item)
             }
         }
 
-        if (totalMaxPoints == 0) {
-            return Triple(100, "GOOD", 0)
+        val totalCount = items.size
+        val uncheckedCount = (totalCount - answeredCount).coerceAtLeast(0)
+        val minimumRequiredCount = kotlin.math.ceil(totalCount * MINIMUM_ANSWERED_SHARE).toInt().coerceAtLeast(1)
+        val isMinimumThresholdMet = totalCount > 0 &&
+            answeredCount >= minimumRequiredCount &&
+            uncheckedCritical.isEmpty()
+
+        if (!isMinimumThresholdMet || totalMaxPoints == 0) {
+            return ScoreEvaluation(
+                overallScore = null,
+                verdict = "INCOMPLETE",
+                totalEstimatedRepairDzd = totalEstimatedRepairDzd,
+                answeredCount = answeredCount,
+                uncheckedCount = uncheckedCount,
+                totalCount = totalCount,
+                minimumRequiredCount = minimumRequiredCount,
+                uncheckedCriticalItems = uncheckedCritical,
+                isMinimumThresholdMet = false
+            )
         }
 
         val rawPercentage = (((totalMaxPoints - deductedPoints).toDouble() / totalMaxPoints.toDouble()) * 100.0).toInt()
             .coerceIn(0, 100)
 
-        // Apply Critical Defect Cap as specified in the brief
         val finalScore = if (hasCriticalProblem) {
             minOf(rawPercentage, 42)
         } else if (importantProblemCount >= 3) {
@@ -134,6 +168,29 @@ object ChecklistEngine {
             else -> "GOOD"
         }
 
-        return Triple(finalScore, verdict, totalEstimatedRepairDzd)
+        return ScoreEvaluation(
+            overallScore = finalScore,
+            verdict = verdict,
+            totalEstimatedRepairDzd = totalEstimatedRepairDzd,
+            answeredCount = answeredCount,
+            uncheckedCount = uncheckedCount,
+            totalCount = totalCount,
+            minimumRequiredCount = minimumRequiredCount,
+            uncheckedCriticalItems = uncheckedCritical,
+            isMinimumThresholdMet = true
+        )
+    }
+
+    /**
+     * Calculates an objective 0..100 score and verdict from answered items ONLY when the
+     * minimum share of items (70%) and all critical items in the chosen mode have been answered.
+     * Otherwise returns (null, "INCOMPLETE", totalRepairEstimateDzd).
+     */
+    fun calculateScoreAndVerdict(
+        answers: Map<String, String>, // itemId -> GOOD, PROBLEM, UNCHECKED
+        items: List<ChecklistItemDefinition>
+    ): Triple<Int?, String, Int> {
+        val eval = evaluateChecklist(answers, items)
+        return Triple(eval.overallScore, eval.verdict, eval.totalEstimatedRepairDzd)
     }
 }
