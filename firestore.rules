@@ -1,0 +1,96 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidInspectionBackup(data, pathUserId) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId == pathUserId &&
+             data.localId is int && data.localId >= 0 &&
+             data.carBrand is string && data.carBrand.size() >= 1 && data.carBrand.size() <= 80 &&
+             data.carModel is string && data.carModel.size() >= 1 && data.carModel.size() <= 80 &&
+             (!('carGeneration' in data) || (data.carGeneration is string && data.carGeneration.size() <= 100)) &&
+             data.carYear is int && data.carYear >= 1970 && data.carYear <= 2035 &&
+             data.fuelType is string && data.fuelType.size() >= 1 && data.fuelType.size() <= 40 &&
+             data.gearboxType is string && data.gearboxType.size() >= 1 && data.gearboxType.size() <= 50 &&
+             (!('engineDescription' in data) || (data.engineDescription is string && data.engineDescription.size() <= 100)) &&
+             (!('vin' in data) || (data.vin is string && data.vin.size() <= 30)) &&
+             (!('plateNumber' in data) || (data.plateNumber is string && data.plateNumber.size() <= 40)) &&
+             data.inspectionMode is string && data.inspectionMode in ['QUICK', 'FULL'] &&
+             data.status is string && data.status in ['IN_PROGRESS', 'COMPLETED'] &&
+             data.overallScore is int && data.overallScore >= 0 && data.overallScore <= 100 &&
+             data.verdict is string && data.verdict in ['GOOD', 'NEGOTIATE', 'AVOID'] &&
+             data.totalEstimatedCostDzd is int && data.totalEstimatedCostDzd >= 0 &&
+             data.problemCount is int && data.problemCount >= 0 &&
+             data.answeredQuestions is int && data.answeredQuestions >= 0 &&
+             data.totalQuestions is int && data.totalQuestions >= 0 &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId}/inspections/{inspectionId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(inspectionId);
+      allow list: if isSignedIn() && request.auth.uid == userId && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(inspectionId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'localId', 'carBrand', 'carModel', 'carYear',
+                         'fuelType', 'gearboxType', 'inspectionMode', 'status',
+                         'overallScore', 'verdict', 'totalEstimatedCostDzd',
+                         'problemCount', 'answeredQuestions', 'totalQuestions',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'localId', 'carBrand', 'carModel', 'carGeneration',
+                         'carYear', 'fuelType', 'gearboxType', 'engineDescription',
+                         'vin', 'plateNumber', 'inspectionMode', 'status',
+                         'overallScore', 'verdict', 'totalEstimatedCostDzd',
+                         'problemCount', 'answeredQuestions', 'totalQuestions',
+                         'notes', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidInspectionBackup(incoming(), userId);
+
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(inspectionId) &&
+                       isValidInspectionBackup(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'localId', 'carBrand', 'carModel', 'carGeneration',
+                         'carYear', 'fuelType', 'gearboxType', 'engineDescription',
+                         'vin', 'plateNumber', 'inspectionMode', 'status',
+                         'overallScore', 'verdict', 'totalEstimatedCostDzd',
+                         'problemCount', 'answeredQuestions', 'totalQuestions',
+                         'notes', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(inspectionId);
+    }
+  }
+}

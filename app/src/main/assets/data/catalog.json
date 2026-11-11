@@ -1,0 +1,97 @@
+{
+  "version": "1.0.0",
+  "market": "Algeria (DZ)",
+  "currency": "DZD",
+  "popularModels": [
+    {
+      "id": "renault_symbol",
+      "brand": "Renault",
+      "model": "Symbol",
+      "generations": ["Symbol 3 (DZ Oued Tlélat) 2013-2021", "Symbol 2 2008-2013"],
+      "fuels": ["ESSENCE", "GPL", "DIESEL"],
+      "gearboxes": ["MANUELLE"],
+      "engines": ["1.2 16v 75ch", "1.6 MPI 80ch", "1.5 dCi 85ch"]
+    },
+    {
+      "id": "renault_clio4",
+      "brand": "Renault",
+      "model": "Clio 4",
+      "generations": ["Phase 2 (GT Line / Limited) 2016-2020", "Phase 1 2012-2016"],
+      "fuels": ["DIESEL", "ESSENCE", "GPL"],
+      "gearboxes": ["MANUELLE", "AUTOMATIQUE (EDC)"],
+      "engines": ["1.5 dCi 90ch", "0.9 TCe 90ch", "1.2 16v 75ch"]
+    },
+    {
+      "id": "peugeot_208",
+      "brand": "Peugeot",
+      "model": "208",
+      "generations": ["Phase 2 (Tech Vision / Allure) 2015-2019", "Phase 1 2012-2015"],
+      "fuels": ["DIESEL", "ESSENCE", "GPL"],
+      "gearboxes": ["MANUELLE", "AUTOMATIQUE"],
+      "engines": ["1.6 HDi 92ch", "1.2 PureTech 82ch", "1.6 e-HDi 115ch"]
+    },
+    {
+      "id": "dacia_stepway",
+      "brand": "Dacia",
+      "model": "Sandero Stepway",
+      "generations": ["Stepway 2 Phase 2 2016-2021", "Stepway 2 Phase 1 2013-2016"],
+      "fuels": ["ESSENCE", "GPL", "DIESEL"],
+      "gearboxes": ["MANUELLE"],
+      "engines": ["1.6 MPI 80ch", "1.5 dCi 85ch", "0.9 TCe 90ch"]
+    },
+    {
+      "id": "vw_golf7",
+      "brand": "Volkswagen",
+      "model": "Golf 7",
+      "generations": ["Golf 7.5 Facelift 2017-2020", "Golf 7 Phase 1 2012-2017"],
+      "fuels": ["DIESEL", "ESSENCE"],
+      "gearboxes": ["AUTOMATIQUE (DSG)", "MANUELLE"],
+      "engines": ["2.0 TDI 150ch / 184ch", "2.0 TDI 110ch / 143ch", "1.4 TSI"]
+    },
+    {
+      "id": "seat_ibiza",
+      "brand": "Seat",
+      "model": "Ibiza",
+      "generations": ["Ibiza 5 (Sovack DZ / FR / Style) 2017-2021", "Ibiza 4 Phase 2 2012-2017"],
+      "fuels": ["ESSENCE", "GPL", "DIESEL"],
+      "gearboxes": ["MANUELLE", "AUTOMATIQUE (DSG)"],
+      "engines": ["1.6 MPI 110ch", "1.4 16v 85ch", "1.6 TDI 90ch"]
+    },
+    {
+      "id": "hyundai_accent",
+      "brand": "Hyundai",
+      "model": "Accent RB",
+      "generations": ["Accent RB (TMC Tiaret / GL) 2011-2019", "Grand i10 / i20 2014-2020"],
+      "fuels": ["ESSENCE", "GPL", "DIESEL"],
+      "gearboxes": ["MANUELLE", "AUTOMATIQUE"],
+      "engines": ["1.4 MPI 107ch", "1.6 MPI 124ch", "1.6 CRDi 128ch"]
+    },
+    {
+      "id": "peugeot_301",
+      "brand": "Peugeot",
+      "model": "301",
+      "generations": ["Phase 2 2017-2020", "Phase 1 2012-2016"],
+      "fuels": ["ESSENCE", "GPL", "DIESEL"],
+      "gearboxes": ["MANUELLE", "AUTOMATIQUE"],
+      "engines": ["1.6 HDi 92ch", "1.2 VTi / PureTech", "1.6 VTi 115ch"]
+    },
+    {
+      "id": "dacia_duster",
+      "brand": "Dacia",
+      "model": "Duster",
+      "generations": ["Duster 2 2018-2022", "Duster 1 Phase 2 2013-2017"],
+      "fuels": ["DIESEL", "ESSENCE", "GPL"],
+      "gearboxes": ["MANUELLE"],
+      "engines": ["1.5 dCi 110ch", "1.6 16v 105ch"]
+    },
+    {
+      "id": "kia_picanto",
+      "brand": "Kia",
+      "model": "Picanto",
+      "generations": ["Picanto 3 (GT Line / Gloviz DZ) 2017-2021", "Picanto 2 2011-2017"],
+      "fuels": ["ESSENCE", "GPL"],
+      "gearboxes": ["AUTOMATIQUE", "MANUELLE"],
+      "engines": ["1.2 MPI 84ch", "1.0 MPI 67ch"]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "description": "Fahs Adaptive Checklist Library (30 starter items across 9 walkaround sections)",
+  "sections": [
+    "1. BEFORE_VISIT",
+    "2. DOCUMENTS_IDENTITY",
+    "3. EXTERIOR",
+    "4. UNDER_BONNET_COLD",
+    "5. INTERIOR",
+    "6. UNDERNEATH_SUSPENSION",
+    "7. ENGINE_START",
+    "8. TEST_DRIVE",
+    "9. AFTER_DRIVE"
+  ],
+  "totalItems": 30,
+  "adaptiveConditions": ["fuelType (ESSENCE, DIESEL, GPL)", "gearboxType (MANUELLE, AUTOMATIQUE)", "knownModelWeakPoints", "quickVsFullMode"]
+}

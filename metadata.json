@@ -1,0 +1,6 @@
+{
+  "name": "Fahs",
+  "description": "Used car inspection assistant for Algeria with VIN decoding, adaptive walkaround, and OBD2 diagnostics",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,131 @@
+{
+  "entities": {
+    "InspectionBackup": {
+      "title": "InspectionBackup",
+      "description": "Cloud backup of a used car inspection report owned by an authenticated user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated user UID owning this inspection backup."
+        },
+        "localId": {
+          "type": "integer",
+          "description": "Local Room database ID of the inspection."
+        },
+        "carBrand": {
+          "type": "string",
+          "description": "Vehicle brand name (e.g., Renault, Peugeot, Volkswagen)."
+        },
+        "carModel": {
+          "type": "string",
+          "description": "Vehicle model name (e.g., Clio 4, Symbol, 208)."
+        },
+        "carGeneration": {
+          "type": "string",
+          "description": "Vehicle generation or phase."
+        },
+        "carYear": {
+          "type": "integer",
+          "description": "Model or registration year."
+        },
+        "fuelType": {
+          "type": "string",
+          "description": "Fuel type (ESSENCE, DIESEL, GPL, HYBRIDE)."
+        },
+        "gearboxType": {
+          "type": "string",
+          "description": "Transmission type (MANUELLE, AUTOMATIQUE)."
+        },
+        "engineDescription": {
+          "type": "string",
+          "description": "Engine displacement and power description."
+        },
+        "vin": {
+          "type": "string",
+          "description": "17-character Vehicle Identification Number."
+        },
+        "plateNumber": {
+          "type": "string",
+          "description": "Algerian registration plate number."
+        },
+        "inspectionMode": {
+          "type": "string",
+          "enum": ["QUICK", "FULL"],
+          "description": "Inspection depth mode."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["IN_PROGRESS", "COMPLETED"],
+          "description": "Current status of the inspection."
+        },
+        "overallScore": {
+          "type": "integer",
+          "description": "Calculated 0-100 vehicle score."
+        },
+        "verdict": {
+          "type": "string",
+          "enum": ["GOOD", "NEGOTIATE", "AVOID"],
+          "description": "Overall inspection verdict."
+        },
+        "totalEstimatedCostDzd": {
+          "type": "integer",
+          "description": "Estimated total repair cost in Algerian Dinars (DZD)."
+        },
+        "problemCount": {
+          "type": "integer",
+          "description": "Number of problems recorded."
+        },
+        "answeredQuestions": {
+          "type": "integer",
+          "description": "Number of answered checklist questions."
+        },
+        "totalQuestions": {
+          "type": "integer",
+          "description": "Total number of applicable checklist questions."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Summary notes including paperwork and OBD2 scan notes."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when backup was created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when backup was last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "localId",
+        "carBrand",
+        "carModel",
+        "carYear",
+        "fuelType",
+        "gearboxType",
+        "inspectionMode",
+        "status",
+        "overallScore",
+        "verdict",
+        "totalEstimatedCostDzd",
+        "problemCount",
+        "answeredQuestions",
+        "totalQuestions",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/inspections/{inspectionId}": {
+      "schema": {
+        "$ref": "#/entities/InspectionBackup"
+      },
+      "description": "Per-user subcollection storing backed-up vehicle inspections."
+    }
+  }
+}
