@@ -2,6 +2,7 @@ package com.example.domain
 
 import com.example.core.i18n.AppLanguage
 import com.example.data.model.ItemSeverity
+import com.example.data.model.VerificationStatus
 import kotlinx.coroutines.delay
 import java.util.Locale
 import kotlin.math.abs
@@ -101,7 +102,8 @@ data class DtcInfo(
     val plainExplanationAr: String,
     val plainExplanationEn: String,
     val minCostDzd: Int,
-    val maxCostDzd: Int
+    val maxCostDzd: Int,
+    val verificationStatus: VerificationStatus = VerificationStatus.TO_BE_VERIFIED
 ) {
     fun getTitle(lang: AppLanguage): String = when (lang) {
         AppLanguage.AR -> titleAr
@@ -286,7 +288,10 @@ object ObdDiagnosticEngine {
             minCostDzd = 18000,
             maxCostDzd = 85000
         )
-    ) + ObdDtcDictionaryExtra.extraDtcMap
+    ) + ObdDtcDictionaryExtra.extraDtcMap +
+        ObdDtcDictionaryPart2.dtcMap +
+        ObdDtcDictionaryPart3.dtcMap +
+        ObdDtcDictionaryPart4.dtcMap
 
     fun lookupDtc(code: String, type: DtcType = DtcType.STORED): DtcInfo {
         val clean = code.uppercase().trim()
@@ -294,18 +299,20 @@ object ObdDiagnosticEngine {
         if (found != null) {
             return found.copy(dtcType = type)
         }
+        val (stdTitleFr, stdTitleAr, stdTitleEn) = ObdDtcDictionaryPart4.getStandardGenericTitles(clean)
         return DtcInfo(
             code = clean,
             dtcType = type,
             severity = ItemSeverity.IMPORTANT,
-            titleFr = "Code défaut calculateur ($clean)",
-            titleAr = "كود عطل مسجل في الكمبيوتر ($clean)",
-            titleEn = "Engine Control Unit Fault Code ($clean)",
+            titleFr = stdTitleFr,
+            titleAr = stdTitleAr,
+            titleEn = stdTitleEn,
             plainExplanationFr = "Demandez à un mécanicien ce que ce code signifie sur cette voiture.",
             plainExplanationAr = "اسأل ميكانيكيًا عن معنى هذا الكود في هذه السيارة.",
             plainExplanationEn = "Ask a mechanic what this code means on this car.",
             minCostDzd = 0,
-            maxCostDzd = 0
+            maxCostDzd = 0,
+            verificationStatus = VerificationStatus.TO_BE_VERIFIED
         )
     }
 

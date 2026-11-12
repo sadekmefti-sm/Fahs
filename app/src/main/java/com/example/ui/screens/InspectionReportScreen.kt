@@ -3,7 +3,9 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -29,17 +30,15 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.RemoveCircleOutline
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,8 +55,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -68,6 +65,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.i18n.AppLanguage
@@ -76,6 +74,7 @@ import com.example.data.local.ChecklistAnswerEntity
 import com.example.data.local.InspectionEntity
 import com.example.data.model.ItemSeverity
 import com.example.domain.InspectionReportData
+import com.example.domain.ObdReportBlockData
 import com.example.domain.PdfReportGenerator
 import com.example.domain.ReportEngine
 import com.example.domain.ReportFindingItem
@@ -89,7 +88,6 @@ import com.example.ui.theme.Emerald900
 import com.example.ui.theme.Slate100
 import com.example.ui.theme.Slate200
 import com.example.ui.theme.Slate300
-import com.example.ui.theme.Slate400
 import com.example.ui.theme.Slate50
 import com.example.ui.theme.Slate600
 import com.example.ui.theme.Slate700
@@ -113,6 +111,7 @@ fun InspectionReportScreen(
     onBackToInspections: () -> Unit,
     onReopenChecklist: () -> Unit,
     onOpenObdScanner: () -> Unit,
+    onSaveNegotiationInputs: (Double, Int) -> Unit = { _, _ -> },
     onPdfGeneratedNotification: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -122,8 +121,22 @@ fun InspectionReportScreen(
         ReportEngine.buildReport(inspection, savedAnswers)
     }
 
-    var askingPriceMillionsInput by remember { mutableStateOf("") }
+    var askingPriceMillionsInput by remember(inspection.id) {
+        mutableStateOf(
+            if (inspection.sellerAskingPriceMillions > 0.0) {
+                val m = inspection.sellerAskingPriceMillions
+                if (m % 1.0 == 0.0) m.toInt().toString() else m.toString()
+            } else ""
+        )
+    }
+    var mechanicQuoteDzdInput by remember(inspection.id) {
+        mutableStateOf(
+            if (inspection.userQuotedRepairDzd > 0) inspection.userQuotedRepairDzd.toString() else ""
+        )
+    }
+
     val askingMillions = askingPriceMillionsInput.toDoubleOrNull() ?: 0.0
+    val mechanicQuoteDzd = mechanicQuoteDzdInput.toIntOrNull() ?: 0
 
     var showPassedItems by remember { mutableStateOf(false) }
     var showUncheckedItems by remember { mutableStateOf(true) }
@@ -139,42 +152,42 @@ fun InspectionReportScreen(
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = onBackToInspections,
-                        modifier = Modifier.testTag("report_back_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Slate900
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = when (language) {
-                                AppLanguage.AR -> "التقرير النهائي لفحص السيارة"
-                                AppLanguage.FR -> "Rapport Final d'Inspection"
-                                AppLanguage.EN -> "Final Inspection Report"
-                            },
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Slate900
-                        )
-                        Text(
-                            text = "${inspection.carBrand} ${inspection.carModel} (${inspection.carYear}) • ${inspection.fuelType} • ${inspection.gearboxType}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Slate600
-                        )
-                    }
+                IconButton(
+                    onClick = onBackToInspections,
+                    modifier = Modifier.testTag("report_back_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Slate900
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = when (language) {
+                            AppLanguage.AR -> "التقرير النهائي لفحص السيارة"
+                            AppLanguage.FR -> "Rapport Final d'Inspection"
+                            AppLanguage.EN -> "Final Inspection Report"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Slate900,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    val odoPart = if (inspection.odometerKm > 0) " • ${inspection.odometerKm} km" else ""
+                    Text(
+                        text = "${inspection.carBrand} ${inspection.carModel} (${inspection.carYear})$odoPart • ${inspection.fuelType} • ${inspection.gearboxType}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Slate600
+                    )
                 }
             }
         }
 
-        // 2. Score Gauge, Verdict & Critical Cap Card
+        // 2. Score Gauge, Verdict & Critical Cap Card (shows both raw and capped scores + 1-line explanation)
         item {
             ScoreVerdictHeroCard(
                 report = report,
@@ -200,7 +213,8 @@ fun InspectionReportScreen(
                                 context = context,
                                 report = report,
                                 language = language,
-                                sellerAskingMillions = askingMillions.takeIf { it > 0.0 }
+                                sellerAskingMillions = askingMillions.takeIf { it > 0.0 },
+                                mechanicQuotedRepairDzd = mechanicQuoteDzd.takeIf { it > 0 }
                             )
                             val msg = when (language) {
                                 AppLanguage.AR -> "تم إنشاء تقرير PDF جاهز للمشاركة (${file.name})"
@@ -290,17 +304,33 @@ fun InspectionReportScreen(
             }
         }
 
-        // 4. Interactive Algerian Price Negotiation Helper (Millions de centimes & DZD)
+        // 4. Dedicated OBD2 Diagnostic Block in the Report (Phase 5)
+        item {
+            ObdReportBlockCard(
+                obdBlock = report.obdBlock,
+                language = language,
+                onOpenObdScanner = onOpenObdScanner
+            )
+        }
+
+        // 5. Mechanic Quote & Price Negotiation Helper (Phase 5 Option b: user-entered mechanic quote only)
         item {
             NegotiationCalculatorCard(
-                report = report,
                 askingPriceMillionsInput = askingPriceMillionsInput,
-                onAskingPriceChange = { askingPriceMillionsInput = it },
+                mechanicQuoteDzdInput = mechanicQuoteDzdInput,
+                onAskingPriceChange = { newPrice ->
+                    askingPriceMillionsInput = newPrice
+                    onSaveNegotiationInputs(newPrice.toDoubleOrNull() ?: 0.0, mechanicQuoteDzd)
+                },
+                onMechanicQuoteChange = { newQuote ->
+                    mechanicQuoteDzdInput = newQuote
+                    onSaveNegotiationInputs(askingMillions, newQuote.toIntOrNull() ?: 0)
+                },
                 language = language
             )
         }
 
-        // 5. Identity, VIN, Algerian Plate & Documents Summary Card
+        // 6. Optional Plate Label & General Notes Summary Card
         item {
             IdentityAndPaperworkReportCard(
                 report = report,
@@ -308,7 +338,7 @@ fun InspectionReportScreen(
             )
         }
 
-        // 6. Critical Issues Section (Red)
+        // 7. Critical Issues Section (Red)
         if (report.criticalProblems.isNotEmpty()) {
             item {
                 FindingsSectionCard(
@@ -329,19 +359,19 @@ fun InspectionReportScreen(
             }
         }
 
-        // 7. Important & Minor Issues to Negotiate Section (Amber)
+        // 8. Important & Minor Issues to Negotiate Section (Amber)
         if (report.negotiableProblems.isNotEmpty()) {
             item {
                 FindingsSectionCard(
                     title = when (language) {
                         AppLanguage.AR -> "نقاط للتفاوض والصيانة (${report.negotiableProblems.size})"
-                        AppLanguage.FR -> "Points à négocier / Frais à prévoir (${report.negotiableProblems.size})"
-                        AppLanguage.EN -> "Items to Negotiate / Upcoming Repairs (${report.negotiableProblems.size})"
+                        AppLanguage.FR -> "Points à négocier / Réparations à chiffrer (${report.negotiableProblems.size})"
+                        AppLanguage.EN -> "Items to Negotiate / Repairs to Quote (${report.negotiableProblems.size})"
                     },
                     subtitle = when (language) {
-                        AppLanguage.AR -> "عيوب قابلة للإصلاح — اخصم تكلفتها من السعر المطلوب"
-                        AppLanguage.FR -> "Défauts réparables — déduisez ces montants lors de la négociation"
-                        AppLanguage.EN -> "Repairable items — use these Algerian market estimates to negotiate"
+                        AppLanguage.AR -> "اطلب من الميكانيكي تسعير هذه النقاط واخصم تكلفتها من السعر المطلوب"
+                        AppLanguage.FR -> "Faites chiffrer ces défauts par votre mécanicien et déduisez-les du prix demandé"
+                        AppLanguage.EN -> "Ask your mechanic to quote these items and subtract the quote from the asking price"
                     },
                     items = report.negotiableProblems,
                     isCritical = false,
@@ -350,7 +380,7 @@ fun InspectionReportScreen(
             }
         }
 
-        // 8. Honest "Could Not Check" Section
+        // 9. Honest "Could Not Check" Section
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -467,7 +497,7 @@ fun InspectionReportScreen(
             }
         }
 
-        // 9. Collapsible Passed Items Section
+        // 10. Collapsible Passed Items Section
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -533,6 +563,7 @@ private fun ScoreVerdictHeroCard(
     language: AppLanguage
 ) {
     val scoreVal = report.overallScore
+    val rawVal = report.rawUncappedScore
     val ringColor = when (report.verdict) {
         "INCOMPLETE" -> Color(0xFF94A3B8)
         "GOOD" -> Color(0xFF34D399)
@@ -615,6 +646,28 @@ private fun ScoreVerdictHeroCard(
                         )
                     }
 
+                    // Show both numbers (raw score and capped score) when critical cap is triggered
+                    if (report.isCriticalCapTriggered && rawVal != null && scoreVal != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color.White.copy(alpha = 0.12f),
+                            modifier = Modifier.testTag("raw_vs_capped_score_badge")
+                        ) {
+                            Text(
+                                text = when (language) {
+                                    AppLanguage.AR -> "النتيجة الخام: $rawVal/100 ← النتيجة المقيّدة: $scoreVal/100"
+                                    AppLanguage.FR -> "Score brut : $rawVal/100 → Score plafonné : $scoreVal/100"
+                                    AppLanguage.EN -> "Raw score: $rawVal/100 → Capped score: $scoreVal/100"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
@@ -656,10 +709,13 @@ private fun ScoreVerdictHeroCard(
                 lineHeight = 19.sp
             )
 
-            if (report.isCriticalCapTriggered) {
+            val capExplanation = report.getCriticalCapOneLineExplanation(language)
+            if (capExplanation != null) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Surface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("critical_cap_explanation_banner"),
                     shape = RoundedCornerShape(10.dp),
                     color = StatusErrorRedContainer
                 ) {
@@ -675,11 +731,7 @@ private fun ScoreVerdictHeroCard(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = when (language) {
-                                AppLanguage.AR -> "تقييد الأمان: النتيجة الخام كانت ${report.rawUncappedScore}/100 لكن تم خفضها إلى ${report.overallScore}/100 لوجود عيب حرج لا يعوضه نظافة باقي السيارة."
-                                AppLanguage.FR -> "Plafond de sécurité : Score brut ${report.rawUncappedScore}/100 ramené à ${report.overallScore}/100 en raison d'un défaut critique."
-                                AppLanguage.EN -> "Safety Cap: Raw score ${report.rawUncappedScore}/100 capped at ${report.overallScore}/100 due to a critical defect."
-                            },
+                            text = capExplanation,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = StatusErrorRedOnContainer
@@ -692,17 +744,171 @@ private fun ScoreVerdictHeroCard(
 }
 
 @Composable
+private fun ObdReportBlockCard(
+    obdBlock: ObdReportBlockData,
+    language: AppLanguage,
+    onOpenObdScanner: () -> Unit
+) {
+    val borderColor = when {
+        !obdBlock.isScanned -> Slate200
+        obdBlock.hasCriticalAlert -> StatusErrorRed
+        else -> Emerald600
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("obd_report_block_card"),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.5.dp, borderColor)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Speed,
+                        contentDescription = null,
+                        tint = if (obdBlock.hasCriticalAlert) StatusErrorRed else Emerald700,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = when (language) {
+                            AppLanguage.AR -> "نتائج الفحص الإلكتروني للكمبيوتر (OBD2)"
+                            AppLanguage.FR -> "Résultats du Diagnostic OBD2"
+                            AppLanguage.EN -> "OBD2 Diagnostic Findings"
+                        },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Slate900
+                    )
+                }
+
+                if (!obdBlock.isScanned) {
+                    OutlinedButton(
+                        onClick = onOpenObdScanner,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text(
+                            text = when (language) {
+                                AppLanguage.AR -> "إجراء الفحص"
+                                AppLanguage.FR -> "Lancer scan"
+                                AppLanguage.EN -> "Run Scan"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = Slate100)
+
+            ObdReportRow(
+                label = when (language) {
+                    AppLanguage.AR -> "1. حالة الاتصال بالكمبيوتر"
+                    AppLanguage.FR -> "1. État de la connexion"
+                    AppLanguage.EN -> "1. Connection status"
+                },
+                value = obdBlock.getConnectionStatusText(language),
+                isWarning = obdBlock.isScanned && !obdBlock.isCommunicationSuccess
+            )
+
+            ObdReportRow(
+                label = when (language) {
+                    AppLanguage.AR -> "2. أكواد الأعطال المسجلة"
+                    AppLanguage.FR -> "2. Codes défauts trouvés"
+                    AppLanguage.EN -> "2. Fault codes found"
+                },
+                value = obdBlock.getFaultCodesText(language),
+                isWarning = obdBlock.dtcCount > 0
+            )
+
+            ObdReportRow(
+                label = when (language) {
+                    AppLanguage.AR -> "3. حالة مسح الذاكرة الحديث"
+                    AppLanguage.FR -> "3. Statut d'effacement des codes"
+                    AppLanguage.EN -> "3. Cleared-codes status"
+                },
+                value = obdBlock.getClearedCodesText(language),
+                isWarning = obdBlock.clearedCodesStatus == "STRONG_WARNING" || obdBlock.clearedCodesStatus == "CANNOT_RULE_OUT"
+            )
+
+            ObdReportRow(
+                label = when (language) {
+                    AppLanguage.AR -> "4. فحص لمبة المحرك (Check Engine)"
+                    AppLanguage.FR -> "4. Contrôle du voyant Check-Engine"
+                    AppLanguage.EN -> "4. Check-Engine light check"
+                },
+                value = obdBlock.getCheckEngineLightText(language),
+                isWarning = obdBlock.isScanned && (!obdBlock.milBulbLitAtKeyOn || obdBlock.milCommandedByEcu == "ON")
+            )
+
+            ObdReportRow(
+                label = when (language) {
+                    AppLanguage.AR -> "5. مقارنة رقم الشاسيه الإلكتروني (09 02)"
+                    AppLanguage.FR -> "5. Comparaison du N° de châssis (09 02)"
+                    AppLanguage.EN -> "5. Chassis-number comparison (09 02)"
+                },
+                value = obdBlock.getChassisComparisonText(language),
+                isWarning = obdBlock.ecuVinComparison == "DIFFERENT"
+            )
+        }
+    }
+}
+
+@Composable
+private fun ObdReportRow(
+    label: String,
+    value: String,
+    isWarning: Boolean
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = Slate600
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = if (isWarning) FontWeight.Bold else FontWeight.Medium,
+            color = if (isWarning) StatusErrorRed else Slate900
+        )
+    }
+}
+
+@Composable
 private fun NegotiationCalculatorCard(
-    report: InspectionReportData,
     askingPriceMillionsInput: String,
+    mechanicQuoteDzdInput: String,
     onAskingPriceChange: (String) -> Unit,
+    onMechanicQuoteChange: (String) -> Unit,
     language: AppLanguage
 ) {
     val askingMillions = askingPriceMillionsInput.toDoubleOrNull() ?: 0.0
-    val (minOfferDzd, maxOfferDzd) = ReportEngine.calculateFairOfferRangeDzd(
+    val mechanicQuoteDzd = mechanicQuoteDzdInput.toIntOrNull() ?: 0
+    val targetOfferDzd = ReportEngine.calculateFairOfferFromMechanicQuoteDzd(
         askingPriceMillions = askingMillions,
-        minRepairDzd = report.minTotalRepairDzd,
-        maxRepairDzd = report.maxTotalRepairDzd
+        mechanicQuotedRepairDzd = mechanicQuoteDzd
     )
 
     Card(
@@ -724,9 +930,9 @@ private fun NegotiationCalculatorCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when (language) {
-                        AppLanguage.AR -> "مساعد التفاوض على السعر (بالسنتيم والدينار الجزائري)"
-                        AppLanguage.FR -> "Aide à la négociation (en Millions de centimes & DZD)"
-                        AppLanguage.EN -> "Algerian Price Negotiation Helper (Millions & DZD)"
+                        AppLanguage.AR -> "حاسبة العرض العادل (حسب تسعيرة الميكانيكي الخاص بك)"
+                        AppLanguage.FR -> "Calculateur d'offre (selon le devis de votre mécanicien)"
+                        AppLanguage.EN -> "Fair Offer Calculator (from your mechanic's quote)"
                     },
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
@@ -734,37 +940,22 @@ private fun NegotiationCalculatorCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Total Estimated Repairs Box
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = if (report.avgTotalRepairDzd > 0) StatusWarningAmberContainer else StatusPassGreenContainer
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = when (language) {
-                            AppLanguage.AR -> "مجموع تكاليف الإصلاح المقدرة في السوق الجزائري:"
-                            AppLanguage.FR -> "Total estimé des réparations à prévoir :"
-                            AppLanguage.EN -> "Total Estimated Repair Costs (Algerian Market):"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (report.avgTotalRepairDzd > 0) StatusWarningAmberOnContainer else StatusPassGreenOnContainer
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "${ReportEngine.formatDzd(report.minTotalRepairDzd)} – ${ReportEngine.formatDzd(report.maxTotalRepairDzd)} (~${ReportEngine.formatMillionsCentimes(report.avgTotalRepairDzd, language)})",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = if (report.avgTotalRepairDzd > 0) StatusWarningAmberOnContainer else StatusPassGreenOnContainer
-                    )
-                }
-            }
+            Text(
+                text = when (language) {
+                    AppLanguage.AR -> "لا يخصم التطبيق مبالغ تقديرية غير معتمدة تلقائياً. أدخل السعر المطلوب من البائع وتكلفة الإصلاح التي حددها الميكانيكي الخاص بك بعد معاينة الأعطال لحساب السعر العادل."
+                    AppLanguage.FR -> "L'application ne déduit aucun montant automatique non vérifié. Saisissez le prix demandé par le vendeur et le devis réel de votre mécanicien pour calculer votre offre."
+                    AppLanguage.EN -> "The app does not subtract unverified automatic repair estimates. Enter the seller's asking price and the repair cost quoted by your own mechanic to calculate your offer."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = Slate600,
+                lineHeight = 18.sp
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Seller Asking Price Input in Millions de centimes
+            // 1. Seller Asking Price Input in Millions de centimes
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -785,7 +976,7 @@ private fun NegotiationCalculatorCard(
                             when (language) {
                                 AppLanguage.AR -> "السعر المطلوب (مليون سنتيم)"
                                 AppLanguage.FR -> "Prix demandé (en Millions)"
-                                AppLanguage.EN -> "Asking Price (Millions centimes)"
+                                AppLanguage.EN -> "Seller's Asking Price (Millions)"
                             }
                         )
                     },
@@ -818,10 +1009,67 @@ private fun NegotiationCalculatorCard(
                 }
             }
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 2. Mechanic's Quoted Repair Cost Input in DZD
+            OutlinedTextField(
+                value = mechanicQuoteDzdInput,
+                onValueChange = { newVal ->
+                    if (newVal.all { it.isDigit() } && newVal.length <= 8) {
+                        onMechanicQuoteChange(newVal)
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("mechanic_repair_quote_dzd_input"),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Build,
+                        contentDescription = null,
+                        tint = Emerald700
+                    )
+                },
+                label = {
+                    Text(
+                        when (language) {
+                            AppLanguage.AR -> "تكلفة الإصلاح حسب تسعيرة الميكانيكي (بالدينار DZD)"
+                            AppLanguage.FR -> "Coût des réparations chiffré par votre mécanicien (en DZD)"
+                            AppLanguage.EN -> "Repair Cost Quoted by Your Mechanic (in DZD)"
+                        }
+                    )
+                },
+                supportingText = {
+                    if (mechanicQuoteDzd > 0) {
+                        Text(
+                            text = "= ${ReportEngine.formatAlgerianCurrency(mechanicQuoteDzd, language)}",
+                            color = Emerald800,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    } else {
+                        Text(
+                            text = when (language) {
+                                AppLanguage.AR -> "مثال: 45000 (أي 4.5 مليون سنتيم)"
+                                AppLanguage.FR -> "Exemple : 45000 (soit 4.5 Millions de centimes)"
+                                AppLanguage.EN -> "Example: 45000 (= 4.5 Million centimes)"
+                            },
+                            color = Slate600
+                        )
+                    }
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Emerald700,
+                    unfocusedBorderColor = Slate300
+                )
+            )
+
             if (askingMillions > 0) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Surface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("fair_offer_result_box"),
                     shape = RoundedCornerShape(12.dp),
                     color = Emerald50,
                     border = BorderStroke(1.dp, Emerald200)
@@ -829,39 +1077,28 @@ private fun NegotiationCalculatorCard(
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
                             text = when (language) {
-                                AppLanguage.AR -> "السعر العادل المقترح بعد خصم الإصلاحات:"
-                                AppLanguage.FR -> "Offre équitable suggérée (après déduction des frais) :"
-                                AppLanguage.EN -> "Suggested Fair Offer Range (after repair deduction):"
+                                AppLanguage.AR -> "السعر المستهدف بعد خصم تسعيرة الميكانيكي:"
+                                AppLanguage.FR -> "Offre cible (Prix demandé − Devis mécanicien) :"
+                                AppLanguage.EN -> "Target Fair Offer (Asking Price − Mechanic Quote):"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = Emerald900
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "${ReportEngine.formatMillionsCentimes(minOfferDzd, language)}  –  ${ReportEngine.formatMillionsCentimes(maxOfferDzd, language)}",
+                            text = ReportEngine.formatMillionsCentimes(targetOfferDzd, language),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.ExtraBold,
                             color = Emerald800
                         )
                         Text(
-                            text = "(${ReportEngine.formatDzd(minOfferDzd)} – ${ReportEngine.formatDzd(maxOfferDzd)})",
+                            text = "(${ReportEngine.formatDzd(targetOfferDzd)})",
                             style = MaterialTheme.typography.labelSmall,
                             color = Slate600
                         )
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = when (language) {
-                    AppLanguage.AR -> "* الأسعار التقديرية استرشادية وتختلف حسب الولاية وتوفر قطع الغيار الأصلية أو التجارية."
-                    AppLanguage.FR -> "* Ces fourchettes sont indicatives et varient selon la wilaya et le choix des pièces (origine ou adaptable)."
-                    AppLanguage.EN -> "* Estimates are indicative and vary by wilaya and parts choice (OEM vs aftermarket)."
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = Slate600
-            )
         }
     }
 }
@@ -886,16 +1123,16 @@ private fun IdentityAndPaperworkReportCard(
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = when (language) {
-                    AppLanguage.AR -> "تسمية السيارة ورقم الشاسيه الإلكتروني (إن وجد)"
-                    AppLanguage.FR -> "Repère d'immatriculation & N° de châssis OBD2"
-                    AppLanguage.EN -> "Optional Plate Label & OBD2 Chassis Number"
-                },
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = Slate900
-            )
+                Text(
+                    text = when (language) {
+                        AppLanguage.AR -> "تسمية السيارة والملاحظات العامة"
+                        AppLanguage.FR -> "Repère d'immatriculation & Notes générales"
+                        AppLanguage.EN -> "Optional Plate Label & General Notes"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Slate900
+                )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -919,21 +1156,6 @@ private fun IdentityAndPaperworkReportCard(
                 fontWeight = FontWeight.Bold,
                 color = Slate900
             )
-
-            if (report.inspection.vin.isNotBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = when (language) {
-                        AppLanguage.AR -> "رقم الشاسيه المقروء من كمبيوتر السيارة (09 02): ${report.inspection.vin}"
-                        AppLanguage.FR -> "N° de châssis lu dans le calculateur (09 02) : ${report.inspection.vin}"
-                        AppLanguage.EN -> "Chassis number read from car ECU (09 02): ${report.inspection.vin}"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = Slate900
-                )
-            }
 
             if (report.inspection.notes.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -980,7 +1202,7 @@ private fun FindingsSectionCard(
                     modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleSmall,
@@ -1015,14 +1237,19 @@ private fun FindingsSectionCard(
                                 text = item.getSectionTitle(language),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Slate700
+                                color = Slate700,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 8.dp)
                             )
                             if (item.maxCostDzd > 0) {
                                 Text(
                                     text = "${item.minCostDzd / 1000}k - ${item.maxCostDzd / 1000}k DZD",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.ExtraBold,
-                                    color = if (isCritical) StatusErrorRed else StatusWarningAmberOnContainer
+                                    color = if (isCritical) StatusErrorRed else StatusWarningAmberOnContainer,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }

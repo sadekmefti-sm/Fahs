@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 class InspectionRepository(private val inspectionDao: InspectionDao) {
 
     val allInspections: Flow<List<InspectionEntity>> = inspectionDao.getAllInspections()
+    val allAnswers: Flow<List<ChecklistAnswerEntity>> = inspectionDao.getAllAnswers()
     val completedCount: Flow<Int> = inspectionDao.getCompletedCount()
     val inProgressCount: Flow<Int> = inspectionDao.getInProgressCount()
 

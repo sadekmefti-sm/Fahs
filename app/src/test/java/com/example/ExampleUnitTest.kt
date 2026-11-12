@@ -23,13 +23,51 @@ import org.junit.Test
 class ExampleUnitTest {
 
     @Test
-    fun `checklist library has at least 30 items ordered by walkaround sections`() {
+    fun `checklist library has at least 120 items across all 9 sections in 3 languages`() {
         val library = ChecklistEngine.fullLibrary
-        assertTrue("Library should have at least 30 items, found ${library.size}", library.size >= 30)
+        assertTrue("Library should have at least 120 items, found ${library.size}", library.size >= 120)
         val sections = library.map { it.section }.distinct()
         assertEquals(9, sections.size)
         assertEquals(ChecklistSection.BEFORE_VISIT, sections.first())
         assertEquals(ChecklistSection.AFTER_DRIVE, sections.last())
+
+        // Every item must have non-blank French, Arabic, and English text and default to TO_BE_VERIFIED
+        for (item in library) {
+            assertTrue("Blank FR question on ${item.id}", item.questionFr.isNotBlank())
+            assertTrue("Blank AR question on ${item.id}", item.questionAr.isNotBlank())
+            assertTrue("Blank EN question on ${item.id}", item.questionEn.isNotBlank())
+            assertEquals(
+                "Weak point ${item.id} must not claim mechanic verification before sign-off",
+                com.example.data.model.VerificationStatus.TO_BE_VERIFIED,
+                item.verificationStatus
+            )
+        }
+    }
+
+    @Test
+    fun `fault code dictionary has at least 150 common codes in 3 languages and standard generic titles`() {
+        val db = ObdDiagnosticEngine.offlineDtcDatabase
+        assertTrue("Expected at least 150 common fault codes, found ${db.size}", db.size >= 150)
+        for ((code, info) in db) {
+            assertTrue("Blank FR title on $code", info.titleFr.isNotBlank())
+            assertTrue("Blank AR title on $code", info.titleAr.isNotBlank())
+            assertTrue("Blank EN title on $code", info.titleEn.isNotBlank())
+            assertTrue("Blank FR explanation on $code", info.plainExplanationFr.isNotBlank())
+            assertTrue("Blank AR explanation on $code", info.plainExplanationAr.isNotBlank())
+            assertTrue("Blank EN explanation on $code", info.plainExplanationEn.isNotBlank())
+            assertEquals(
+                com.example.data.model.VerificationStatus.TO_BE_VERIFIED,
+                info.verificationStatus
+            )
+        }
+
+        // Standard generic code outside the 150+ dictionary gets a 3-language standard category title and honest explanation
+        val genericP0 = ObdDiagnosticEngine.lookupDtc("P0799")
+        assertTrue(genericP0.titleEn.contains("Transmission", ignoreCase = true))
+        assertTrue(genericP0.titleFr.contains("transmission", ignoreCase = true))
+        assertTrue(genericP0.titleAr.contains("علبة السرعة"))
+        assertTrue(genericP0.plainExplanationEn.contains("Ask a mechanic what this code means on this car"))
+        assertEquals(0, genericP0.minCostDzd)
     }
 
     @Test
@@ -39,7 +77,11 @@ class ExampleUnitTest {
             model = "Clio 4",
             fuelType = "DIESEL",
             gearboxType = "MANUELLE",
-            isQuickMode = false
+            isQuickMode = false,
+            generation = "Clio IV Phase 2",
+            engineDescription = "1.5 dCi 85/90/110ch",
+            carYear = 2018,
+            odometerKm = 135000
         )
         val ids = items.map { it.id }.toSet()
         assertTrue(ids.contains("start_diesel_injectors_turbo"))
@@ -69,16 +111,77 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun `peugeot 208 essence gets puretech timing belt weak point check`() {
-        val items = ChecklistEngine.buildChecklistForCar(
+    fun `model weak points match exact model, generation, and engine without brand-wide shortcuts`() {
+        // 1. Petrol Peugeot 208 with 1.2 PureTech gets the PureTech wet-belt weak point
+        val p208PureTech = ChecklistEngine.buildChecklistForCar(
             brand = "Peugeot",
             model = "208",
             fuelType = "ESSENCE",
             gearboxType = "MANUELLE",
-            isQuickMode = true
-        )
-        val ids = items.map { it.id }.toSet()
-        assertTrue(ids.contains("bonnet_peugeot_puretech_belt"))
+            isQuickMode = true,
+            generation = "208 I Phase 2",
+            engineDescription = "1.2 PureTech 82ch"
+        ).map { it.id }.toSet()
+        assertTrue(p208PureTech.contains("bonnet_peugeot_puretech_belt"))
+
+        // 2. Petrol Peugeot 207 (1.4 VTi / 1.4 8v — NOT a 1.2 PureTech model) must NOT get PureTech belt check
+        val p207Petrol = ChecklistEngine.buildChecklistForCar(
+            brand = "Peugeot",
+            model = "207",
+            fuelType = "ESSENCE",
+            gearboxType = "MANUELLE",
+            isQuickMode = false,
+            generation = "207 Phase 2",
+            engineDescription = "1.4 Essence 75ch"
+        ).map { it.id }.toSet()
+        assertFalse("Brand-wide Peugeot shortcut must be removed", p207Petrol.contains("bonnet_peugeot_puretech_belt"))
+
+        // 3. Diesel Renault Master (2.3 dCi — not in 1.5 dCi model list) must NOT get 1.5 dCi weak point
+        val renaultMaster = ChecklistEngine.buildChecklistForCar(
+            brand = "Renault",
+            model = "Master",
+            fuelType = "DIESEL",
+            gearboxType = "MANUELLE",
+            isQuickMode = false
+        ).map { it.id }.toSet()
+        assertFalse("Brand-wide Renault diesel shortcut must be removed", renaultMaster.contains("bonnet_renault_dci_turbo_oil"))
+    }
+
+    @Test
+    fun `other car missing from catalogue gets fully adapted checklist from year, mileage, turbo, 4x4, and body type`() {
+        val pickup4x4Items = ChecklistEngine.buildChecklistForCar(
+            brand = "Great Wall",
+            model = "Wingle 7",
+            fuelType = "DIESEL",
+            gearboxType = "MANUELLE",
+            isQuickMode = false,
+            carYear = 2014,
+            odometerKm = 185000,
+            hasTurbo = true,
+            isFourWheelDrive = true,
+            bodyType = "PICKUP"
+        ).map { it.id }.toSet()
+
+        // Gets Pick-up / Van specific checks
+        assertTrue(pickup4x4Items.contains("ext_pickup_bed_and_cab_gap"))
+        assertTrue(pickup4x4Items.contains("under_pickup_ladder_frame_leaf_springs"))
+        assertTrue(pickup4x4Items.contains("tyre_rear_leaf_springs_shackles"))
+        // Gets 4x4 transfer case & propshaft checks
+        assertTrue(pickup4x4Items.contains("int_4x4_selector_switch"))
+        assertTrue(pickup4x4Items.contains("under_4x4_propshaft_differentials"))
+        // Gets Turbo checks
+        assertTrue(pickup4x4Items.contains("bonnet_turbo_wastegate_and_pipes"))
+        assertTrue(pickup4x4Items.contains("drive_turbo_boost_uphill_pull"))
+        // Gets High-Mileage (>= 120k / 150k km) checks
+        assertTrue(pickup4x4Items.contains("bonnet_high_mileage_cooling_hoses"))
+        assertTrue(pickup4x4Items.contains("bonnet_high_mileage_injectors_seals"))
+        assertTrue(pickup4x4Items.contains("int_high_mileage_pedal_shifter_play"))
+        // Gets Older car (>= 8 years / <= 2016) checks
+        assertTrue(pickup4x4Items.contains("ext_older_car_window_seals_corrosion"))
+        assertTrue(pickup4x4Items.contains("under_older_car_floorpan_corrosion"))
+        // Does NOT get model-specific catalogue weak points
+        assertFalse(pickup4x4Items.contains("bonnet_peugeot_puretech_belt"))
+        assertFalse(pickup4x4Items.contains("bonnet_renault_dci_turbo_oil"))
     }
 
     @Test
@@ -436,14 +539,76 @@ class ExampleUnitTest {
             )
         }
         val completeReport = ReportEngine.buildReport(inspection, fullAnswers)
-        assertTrue((completeReport.overallScore ?: 100) <= 42)
+        assertEquals(42, completeReport.overallScore)
+        assertTrue((completeReport.rawUncappedScore ?: 0) > 42)
+        assertTrue(completeReport.isCriticalCapTriggered)
         assertEquals("AVOID", completeReport.verdict)
         assertEquals(1, completeReport.criticalProblems.size)
 
-        // 240 Millions asking price (2,400,000 DZD) minus 50,000 to 100,000 DZD repairs -> 2,300,000 to 2,350,000 DZD
-        val (minOffer, maxOffer) = ReportEngine.calculateFairOfferRangeDzd(240.0, 50000, 100000)
-        assertEquals(2300000, minOffer)
-        assertEquals(2350000, maxOffer)
-        assertEquals("230 Millions", ReportEngine.formatMillionsCentimes(minOffer, AppLanguage.FR))
+        // Phase 5: 1-line explanation shows both 42 and the raw score and names the critical item
+        val capLineEn = completeReport.getCriticalCapOneLineExplanation(AppLanguage.EN) ?: ""
+        assertTrue(capLineEn.contains("Score capped at 42"))
+        assertTrue(capLineEn.contains("${completeReport.rawUncappedScore}/100"))
+        assertTrue(capLineEn.contains("because of 1 critical problem:"))
+        assertTrue(capLineEn.contains(completeReport.criticalProblems.first().questionEn))
+
+        // Phase 5: Unverified automatic item costs are never subtracted automatically
+        assertEquals(0, completeReport.minTotalRepairDzd)
+        assertEquals(0, completeReport.maxTotalRepairDzd)
+
+        // Phase 5: User-entered mechanic quote (e.g., 60,000 DZD = 6 Millions) subtracted from 240 Millions = 2,340,000 DZD (234 Millions)
+        val fairOfferDzd = ReportEngine.calculateFairOfferFromMechanicQuoteDzd(
+            askingPriceMillions = 240.0,
+            mechanicQuotedRepairDzd = 60000
+        )
+        assertEquals(2340000, fairOfferDzd)
+        assertEquals("234 Millions", ReportEngine.formatMillionsCentimes(fairOfferDzd, AppLanguage.FR))
+    }
+
+    @Test
+    fun `algerian car catalogue has 51 models across 20 brand groups all marked to be verified`() {
+        val models = com.example.data.model.AlgerianCarCatalog.models
+        assertEquals(51, models.size)
+        for (car in models) {
+            assertEquals(
+                "Catalogue model ${car.id} must default to TO_BE_VERIFIED",
+                com.example.data.model.VerificationStatus.TO_BE_VERIFIED,
+                car.weakPointVerificationStatus
+            )
+            assertTrue(car.keyWeakPointFr.isNotBlank())
+            assertTrue(car.keyWeakPointAr.isNotBlank())
+            assertTrue(car.keyWeakPointEn.isNotBlank())
+        }
+    }
+
+    @Test
+    fun `report obd block formats all 5 required OBD fields accurately`() {
+        val inspectionWithObd = InspectionEntity(
+            id = 22L,
+            carBrand = "Peugeot",
+            carModel = "208",
+            carYear = 2018,
+            hasObdScan = true,
+            obdCommunicationSuccess = true,
+            obdProtocolDescription = "ISO 15765-4 CAN",
+            obdDtcCodesSummary = "P0420 (STORED), P0299 (PENDING)",
+            obdDtcCount = 2,
+            obdClearedStatus = "STRONG_WARNING",
+            obdDistanceSinceClearedKm = 14,
+            obdWarmupsSinceCleared = 1,
+            obdMilBulbLitAtKeyOn = false,
+            obdMilCommandedByEcu = "ON",
+            obdEcuVin = "VF3CC9HP0JW109482",
+            obdEcuVinComparison = "DIFFERENT"
+        )
+        val report = ReportEngine.buildReport(inspectionWithObd, emptyList())
+        val block = report.obdBlock
+        assertTrue(block.isScanned)
+        assertTrue(block.hasCriticalAlert)
+        assertTrue(block.getConnectionStatusText(AppLanguage.EN).contains("Connected to car ECU"))
+        assertTrue(block.getFaultCodesText(AppLanguage.EN).contains("2 fault code(s) found: P0420 (STORED), P0299 (PENDING)"))
+        assertTrue(block.getClearedCodesText(AppLanguage.EN).contains("14 km since clearing"))
+        assertTrue(block.getCheckEngineLightText(AppLanguage.EN).contains("CRITICAL: Check-Engine light did NOT light up at key-on"))
+        assertTrue(block.getChassisComparisonText(AppLanguage.EN).contains("DIFFERENT from the carte grise"))
     }
 }

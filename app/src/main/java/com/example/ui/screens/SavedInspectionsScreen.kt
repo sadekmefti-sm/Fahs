@@ -7,6 +7,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -63,6 +65,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.auth.GoogleAuthHelper
@@ -94,6 +97,7 @@ import java.util.Locale
 fun SavedInspectionsScreen(
     language: AppLanguage,
     inspections: List<InspectionEntity>,
+    answersByInspectionId: Map<Long, List<com.example.data.local.ChecklistAnswerEntity>> = emptyMap(),
     cloudUserEmail: String?,
     cloudUserName: String?,
     isCloudSyncing: Boolean,
@@ -132,6 +136,7 @@ fun SavedInspectionsScreen(
     if (showComparisonDialog && comparedInspections.size >= 2) {
         CarComparisonDialog(
             inspections = comparedInspections,
+            answersByInspectionId = answersByInspectionId,
             language = language,
             onSelectCarReport = { id ->
                 showComparisonDialog = false
@@ -552,7 +557,12 @@ private fun OptionalCloudBackupCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                ) {
                     Box(
                         modifier = Modifier
                             .size(36.dp)
@@ -568,7 +578,7 @@ private fun OptionalCloudBackupCard(
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = when (language) {
                                 AppLanguage.AR -> "النسخ الاحتياطي السحابي (اختياري)"
@@ -709,6 +719,7 @@ private fun OptionalCloudBackupCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SavedInspectionDetailedCard(
     inspection: InspectionEntity,
@@ -744,18 +755,26 @@ fun SavedInspectionDetailedCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                ) {
                     Text(
                         text = "${inspection.carBrand} ${inspection.carModel}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Slate900
+                        color = Slate900,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     val plateSuffix = if (inspection.plateNumber.isNotBlank()) " • ${inspection.plateNumber}" else ""
                     Text(
                         text = "${inspection.carGeneration} • ${inspection.carYear}$plateSuffix",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Slate600
+                        color = Slate600,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 StatusBadge(status = inspection.status, language = language)
@@ -769,7 +788,13 @@ fun SavedInspectionDetailedCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = Slate100
@@ -778,6 +803,8 @@ fun SavedInspectionDetailedCard(
                             text = inspection.fuelType,
                             style = MaterialTheme.typography.labelSmall,
                             color = Slate700,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
@@ -789,6 +816,8 @@ fun SavedInspectionDetailedCard(
                             text = inspection.gearboxType,
                             style = MaterialTheme.typography.labelSmall,
                             color = Slate700,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
@@ -801,6 +830,8 @@ fun SavedInspectionDetailedCard(
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = Emerald900,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
@@ -834,7 +865,9 @@ fun SavedInspectionDetailedCard(
                             },
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = if (isSelectedForCompare) Color.White else Slate700
+                            color = if (isSelectedForCompare) Color.White else Slate700,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -848,7 +881,11 @@ fun SavedInspectionDetailedCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                ) {
                     Text(
                         text = when (language) {
                             AppLanguage.AR -> "الإجابات: ${inspection.answeredQuestions}/${inspection.totalQuestions} • المشاكل: ${inspection.problemCount}"
@@ -859,9 +896,9 @@ fun SavedInspectionDetailedCard(
                         fontWeight = FontWeight.SemiBold,
                         color = if (inspection.problemCount > 0) StatusWarningAmber else Slate600
                     )
-                    if (inspection.totalEstimatedCostDzd > 0) {
+                    if (inspection.userQuotedRepairDzd > 0) {
                         Text(
-                            text = ReportEngine.formatAlgerianCurrency(inspection.totalEstimatedCostDzd, language),
+                            text = ReportEngine.formatAlgerianCurrency(inspection.userQuotedRepairDzd, language),
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Medium,
                             color = Slate700
@@ -874,6 +911,8 @@ fun SavedInspectionDetailedCard(
                         text = "${inspection.overallScore}/100",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
                         color = when {
                             inspection.overallScore >= 78 -> StatusPassGreen
                             inspection.overallScore >= 50 -> StatusWarningAmber

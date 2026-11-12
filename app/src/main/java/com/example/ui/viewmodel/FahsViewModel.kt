@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -102,6 +103,14 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
+        )
+
+    val allAnswersByInspectionId: StateFlow<Map<Long, List<ChecklistAnswerEntity>>> = repository.allAnswers
+        .map { list -> list.groupBy { it.inspectionId } }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
         )
 
     val completedCount: StateFlow<Int> = repository.completedCount
@@ -269,48 +278,129 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
     fun seedSampleComparisonInspections(onSeeded: () -> Unit = {}) {
         if (!_isDeveloperModeEnabled.value) return
         viewModelScope.launch {
+            val sample1Items = ChecklistEngine.buildChecklistForCar(
+                brand = "Renault",
+                model = "Symbol",
+                fuelType = "GPL",
+                gearboxType = "MANUELLE",
+                isQuickMode = false,
+                generation = "Symbol 3 (DZ Oued Tlélat)",
+                engineDescription = "1.6 MPI 80ch",
+                carYear = 2019,
+                odometerKm = 94000
+            )
             val sample1 = InspectionEntity(
                 carBrand = "Renault",
                 carModel = "Symbol",
-                carGeneration = "Symbol III (DZ Mi-vie)",
+                carGeneration = "Symbol 3 (DZ Oued Tlélat)",
                 carYear = 2019,
+                odometerKm = 94000,
                 fuelType = "GPL",
                 gearboxType = "MANUELLE",
-                engineDescription = "1.6 MPI 80ch + Kit GPL Sirghaz",
+                engineDescription = "1.6 MPI 80ch",
                 vin = "VF14SRB04K0519283",
                 plateNumber = "04821 119 16",
                 inspectionMode = "FULL",
-                overallScore = 86,
-                verdict = "GOOD",
+                overallScore = 88,
+                verdict = "NEGOTIATE",
                 status = "COMPLETED",
-                totalEstimatedCostDzd = 22000,
-                notes = "[DEV DEMO] Première main, carnet d'entretien à jour, éprouvette GPL valide. Pneus avant à prévoir.",
-                totalQuestions = 26,
-                answeredQuestions = 26,
+                totalEstimatedCostDzd = 0,
+                hasObdScan = true,
+                obdCommunicationSuccess = true,
+                obdProtocolDescription = "ISO 15765-4 CAN (11 bit, 500 kbps)",
+                obdDtcCodesSummary = "0 DTC",
+                obdDtcCount = 0,
+                obdClearedStatus = "NONE_NORMAL",
+                obdDistanceSinceClearedKm = 4200,
+                obdWarmupsSinceCleared = 115,
+                obdMilBulbLitAtKeyOn = true,
+                obdMilCommandedByEcu = "OFF",
+                obdEcuVin = "VF14SRB04K0519283",
+                obdEcuVinComparison = "SAME",
+                notes = "[DEV DEMO] Première main, révision GPL à jour.",
+                totalQuestions = sample1Items.size,
+                answeredQuestions = sample1Items.size,
                 problemCount = 1
+            )
+            val id1 = repository.insertInspection(sample1)
+            val answers1 = sample1Items.mapIndexed { idx, def ->
+                val isProblem = def.id == "under_tyres_wear_date" || (idx == 12 && def.severity.name != "CRITICAL")
+                ChecklistAnswerEntity(
+                    inspectionId = id1,
+                    itemId = def.id,
+                    category = def.section.name,
+                    questionFr = def.questionFr,
+                    questionAr = def.questionAr,
+                    questionEn = def.questionEn,
+                    status = if (isProblem) "PROBLEM" else "GOOD",
+                    severity = def.severity.name,
+                    estimatedCostDzd = 0,
+                    note = if (isProblem) "Pneus avant usés à 70%" else ""
+                )
+            }
+            repository.saveAnswers(answers1)
+
+            val sample2Items = ChecklistEngine.buildChecklistForCar(
+                brand = "Peugeot",
+                model = "208",
+                fuelType = "DIESEL",
+                gearboxType = "MANUELLE",
+                isQuickMode = false,
+                generation = "208 I Phase 2 (Tech Vision / Allure)",
+                engineDescription = "1.6 HDi 92ch",
+                carYear = 2018,
+                odometerKm = 152000
             )
             val sample2 = InspectionEntity(
                 carBrand = "Peugeot",
                 carModel = "208",
-                carGeneration = "208 I Phase 2",
+                carGeneration = "208 I Phase 2 (Tech Vision / Allure)",
                 carYear = 2018,
+                odometerKm = 152000,
                 fuelType = "DIESEL",
                 gearboxType = "MANUELLE",
                 engineDescription = "1.6 HDi 92ch",
                 vin = "VF3CC9HP0JW109482",
                 plateNumber = "11290 118 09",
                 inspectionMode = "FULL",
-                overallScore = 62,
-                verdict = "NEGOTIATE",
+                overallScore = 42,
+                verdict = "AVOID",
                 status = "COMPLETED",
-                totalEstimatedCostDzd = 95000,
-                notes = "[DEV DEMO] [OBD2 Scan: P0420 (STORED) | ALERTE: Mémoire effacée il y a 12 km] Embrayage haut et suintement turbo.",
-                totalQuestions = 27,
-                answeredQuestions = 27,
-                problemCount = 4
+                totalEstimatedCostDzd = 0,
+                hasObdScan = true,
+                obdCommunicationSuccess = true,
+                obdProtocolDescription = "ISO 15765-4 CAN (11 bit, 500 kbps)",
+                obdDtcCodesSummary = "P0420 (STORED), P0299 (PENDING)",
+                obdDtcCount = 2,
+                obdClearedStatus = "STRONG_WARNING",
+                obdDistanceSinceClearedKm = 12,
+                obdWarmupsSinceCleared = 1,
+                obdMilBulbLitAtKeyOn = true,
+                obdMilCommandedByEcu = "ON",
+                obdEcuVin = "VF3CC9HP0JW109482",
+                obdEcuVinComparison = "SAME",
+                notes = "[DEV DEMO] Mémoire effacée il y a 12 km, suintement turbo et embrayage haut.",
+                totalQuestions = sample2Items.size,
+                answeredQuestions = sample2Items.size,
+                problemCount = 3
             )
-            repository.insertInspection(sample1)
-            repository.insertInspection(sample2)
+            val id2 = repository.insertInspection(sample2)
+            val answers2 = sample2Items.mapIndexed { idx, def ->
+                val isProblem = idx == 5 || idx == 14 || idx == 20
+                ChecklistAnswerEntity(
+                    inspectionId = id2,
+                    itemId = def.id,
+                    category = def.section.name,
+                    questionFr = def.questionFr,
+                    questionAr = def.questionAr,
+                    questionEn = def.questionEn,
+                    status = if (isProblem) "PROBLEM" else "GOOD",
+                    severity = def.severity.name,
+                    estimatedCostDzd = 0,
+                    note = if (isProblem) "Anomalie constatée lors de l'inspection" else ""
+                )
+            }
+            repository.saveAnswers(answers2)
             onSeeded()
         }
     }
@@ -360,6 +450,10 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
         engineDesc: String,
         isQuickMode: Boolean,
         plateNumber: String = "",
+        odometerKm: Int = 0,
+        hasTurbo: Boolean = false,
+        isFourWheelDrive: Boolean = false,
+        bodyType: String = "CITADINE",
         onCreated: (Long) -> Unit = {}
     ) {
         viewModelScope.launch {
@@ -368,16 +462,27 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 model = model,
                 fuelType = fuelType,
                 gearboxType = gearboxType,
-                isQuickMode = isQuickMode
+                isQuickMode = isQuickMode,
+                generation = generation,
+                engineDescription = engineDesc,
+                carYear = year,
+                odometerKm = odometerKm,
+                hasTurbo = hasTurbo,
+                isFourWheelDrive = isFourWheelDrive,
+                bodyType = bodyType
             )
             val newInspection = InspectionEntity(
                 carBrand = brand,
                 carModel = model,
                 carGeneration = generation,
                 carYear = year,
+                odometerKm = odometerKm,
                 fuelType = fuelType,
                 gearboxType = gearboxType,
                 engineDescription = engineDesc,
+                hasTurbo = hasTurbo,
+                isFourWheelDrive = isFourWheelDrive,
+                bodyType = bodyType,
                 plateNumber = plateNumber.trim(),
                 inspectionMode = if (isQuickMode) "QUICK" else "FULL",
                 totalQuestions = adaptiveList.size,
@@ -413,7 +518,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 questionEn = item.questionEn,
                 status = status,
                 severity = item.severity.name,
-                estimatedCostDzd = if (status == "PROBLEM") item.getAverageCostDzd() else 0,
+                estimatedCostDzd = 0,
                 note = note,
                 photoUri = photoUri,
                 timestamp = System.currentTimeMillis()
@@ -426,15 +531,31 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
 
             val answeredCount = updatedMap.size
             val problemCount = updatedMap.values.count { it.status == "PROBLEM" }
-            val totalEstCost = updatedMap.values.filter { it.status == "PROBLEM" }
-                .sumOf { it.estimatedCostDzd }
 
             repository.updateInspection(
                 currentInspection.copy(
                     totalQuestions = totalAdaptiveItems,
                     answeredQuestions = answeredCount,
                     problemCount = problemCount,
-                    totalEstimatedCostDzd = totalEstCost,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun saveUserNegotiationInputs(
+        askingPriceMillions: Double,
+        mechanicQuotedRepairDzd: Int
+    ) {
+        val inspectionId = _activeInspectionId.value ?: return
+        viewModelScope.launch {
+            val current = repository.getInspection(inspectionId) ?: return@launch
+            val safeQuote = mechanicQuotedRepairDzd.coerceAtLeast(0)
+            repository.updateInspection(
+                current.copy(
+                    sellerAskingPriceMillions = askingPriceMillions.coerceAtLeast(0.0),
+                    userQuotedRepairDzd = safeQuote,
+                    totalEstimatedCostDzd = safeQuote,
                     updatedAt = System.currentTimeMillis()
                 )
             )
@@ -450,7 +571,14 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 model = current.carModel,
                 fuelType = current.fuelType,
                 gearboxType = current.gearboxType,
-                isQuickMode = false
+                isQuickMode = false,
+                generation = current.carGeneration,
+                engineDescription = current.engineDescription,
+                carYear = current.carYear,
+                odometerKm = current.odometerKm,
+                hasTurbo = current.hasTurbo,
+                isFourWheelDrive = current.isFourWheelDrive,
+                bodyType = current.bodyType
             )
             repository.updateInspection(
                 current.copy(
@@ -471,7 +599,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                     status = if (score != null) "COMPLETED" else "IN_PROGRESS",
                     overallScore = score,
                     verdict = verdict,
-                    totalEstimatedCostDzd = totalRepairDzd,
+                    totalEstimatedCostDzd = current.userQuotedRepairDzd,
                     updatedAt = System.currentTimeMillis()
                 )
             )
@@ -504,9 +632,6 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 scanResult.isRecentlyClearedFraudAlert ||
                 isMilTampered ||
                 isEcuVinDifferent
-
-            // Only sum sourced fault-code repair costs; never add fixed 25,000 / 35,000 DZD amounts
-            val obdCostDzd = scanResult.dtcList.sumOf { it.getAverageCostDzd() }
 
             val dtcCodesSummary = if (scanResult.dtcList.isEmpty()) {
                 "0 DTC"
@@ -552,7 +677,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 questionEn = "OBD2 Electronic ECU Scan (Fault codes, MIL bulb & recently cleared memory)",
                 status = if (!scanResult.isCommunicationSuccess) "UNCHECKED" else if (hasFaultsOrFraud) "PROBLEM" else "GOOD",
                 severity = if (scanResult.isRecentlyClearedFraudAlert || isMilTampered || isEcuVinDifferent || scanResult.dtcList.any { it.severity.name == "CRITICAL" }) "CRITICAL" else "IMPORTANT",
-                estimatedCostDzd = if (hasFaultsOrFraud) obdCostDzd else 0,
+                estimatedCostDzd = 0,
                 note = obdSummaryNote,
                 photoUri = null,
                 timestamp = System.currentTimeMillis()
@@ -563,8 +688,6 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
             updatedMap[obdAnswer.itemId] = obdAnswer
 
             val problemCount = updatedMap.values.count { it.status == "PROBLEM" }
-            val totalEstCost = updatedMap.values.filter { it.status == "PROBLEM" }
-                .sumOf { it.estimatedCostDzd }
 
             val mergedNotes = if (current.notes.contains("[OBD2 Scan:")) {
                 current.notes.replace(Regex("\\[OBD2 Scan:.*?]"), obdSummaryNote)
@@ -575,11 +698,33 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             val updatedVin = if (!scanResult.ecuVin.isNullOrBlank()) scanResult.ecuVin else current.vin
+            val milCommandedStr = when (scanResult.milCommandedOn) {
+                true -> "ON"
+                false -> "OFF"
+                null -> "NOT_AVAILABLE"
+            }
+            val vinComparisonStr = if (scanResult.ecuVin.isNullOrBlank()) {
+                "NOT_AVAILABLE"
+            } else {
+                ecuVinComparison.name
+            }
+
             repository.updateInspection(
                 current.copy(
                     vin = updatedVin,
+                    hasObdScan = true,
+                    obdCommunicationSuccess = scanResult.isCommunicationSuccess,
+                    obdProtocolDescription = scanResult.detectedProtocol,
+                    obdDtcCodesSummary = dtcCodesSummary,
+                    obdDtcCount = scanResult.dtcList.size,
+                    obdClearedStatus = scanResult.clearedCodesAlertLevel.name,
+                    obdDistanceSinceClearedKm = distKm ?: -1,
+                    obdWarmupsSinceCleared = warmups ?: -1,
+                    obdMilBulbLitAtKeyOn = milBulbLitOnDashboard,
+                    obdMilCommandedByEcu = milCommandedStr,
+                    obdEcuVin = scanResult.ecuVin.orEmpty(),
+                    obdEcuVinComparison = vinComparisonStr,
                     problemCount = problemCount,
-                    totalEstimatedCostDzd = totalEstCost,
                     notes = mergedNotes,
                     updatedAt = System.currentTimeMillis()
                 )

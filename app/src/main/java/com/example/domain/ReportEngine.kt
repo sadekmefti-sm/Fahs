@@ -4,8 +4,8 @@ import com.example.core.i18n.AppLanguage
 import com.example.data.local.ChecklistAnswerEntity
 import com.example.data.local.InspectionEntity
 import com.example.data.model.ChecklistItemDefinition
-import com.example.data.model.ChecklistSection
 import com.example.data.model.ItemSeverity
+import com.example.data.model.VerificationStatus
 import java.util.Locale
 
 data class ReportFindingItem(
@@ -26,7 +26,8 @@ data class ReportFindingItem(
     val avgCostDzd: Int,
     val buyerNote: String,
     val photoUri: String?,
-    val isKnownModelWeakPoint: Boolean
+    val isKnownModelWeakPoint: Boolean,
+    val verificationStatus: VerificationStatus = VerificationStatus.TO_BE_VERIFIED
 ) {
     fun getSectionTitle(lang: AppLanguage): String = when (lang) {
         AppLanguage.AR -> sectionTitleAr
@@ -44,6 +45,180 @@ data class ReportFindingItem(
         AppLanguage.AR -> explanationAr
         AppLanguage.FR -> explanationFr
         AppLanguage.EN -> explanationEn
+    }
+}
+
+data class ObdReportBlockData(
+    val isScanned: Boolean,
+    val isCommunicationSuccess: Boolean,
+    val protocolDescription: String,
+    val dtcCount: Int,
+    val dtcSummaryText: String,
+    val clearedCodesStatus: String, // STRONG_WARNING, CANNOT_RULE_OUT, NONE_NORMAL, NOT_AVAILABLE
+    val distanceSinceClearedKm: Int?,
+    val warmupsSinceCleared: Int?,
+    val milBulbLitAtKeyOn: Boolean,
+    val milCommandedByEcu: String, // ON, OFF, NOT_AVAILABLE
+    val ecuVin: String,
+    val ecuVinComparison: String // SAME, DIFFERENT, COULD_NOT_COMPARE, NOT_AVAILABLE
+) {
+    val hasCriticalAlert: Boolean
+        get() = isScanned && (
+            !milBulbLitAtKeyOn ||
+                clearedCodesStatus == "STRONG_WARNING" ||
+                ecuVinComparison == "DIFFERENT" ||
+                dtcCount > 0
+            )
+
+    fun getConnectionStatusText(lang: AppLanguage): String {
+        if (!isScanned) {
+            return when (lang) {
+                AppLanguage.AR -> "لم يتم إجراء فحص OBD2 (فحص يدوي فقط)"
+                AppLanguage.FR -> "Non effectué (inspection visuelle uniquement)"
+                AppLanguage.EN -> "Not scanned (visual walkaround only)"
+            }
+        }
+        return if (isCommunicationSuccess) {
+            val proto = if (protocolDescription.isNotBlank()) " ($protocolDescription)" else ""
+            when (lang) {
+                AppLanguage.AR -> "متصل بكمبيوتر السيارة بنجاح$proto"
+                AppLanguage.FR -> "Connecté au calculateur moteur$proto"
+                AppLanguage.EN -> "Connected to car ECU$proto"
+            }
+        } else {
+            when (lang) {
+                AppLanguage.AR -> "تعذر الاتصال بكمبيوتر السيارة (غير متوفر أو لم يستجب)"
+                AppLanguage.FR -> "Communication impossible avec le calculateur"
+                AppLanguage.EN -> "Could not communicate with car ECU"
+            }
+        }
+    }
+
+    fun getFaultCodesText(lang: AppLanguage): String {
+        if (!isScanned || !isCommunicationSuccess) {
+            return when (lang) {
+                AppLanguage.AR -> "غير متوفر في هذه السيارة / لم يُفحص"
+                AppLanguage.FR -> "Non disponible / Non vérifié"
+                AppLanguage.EN -> "Not available / Not checked"
+            }
+        }
+        if (dtcCount <= 0 || dtcSummaryText.isBlank() || dtcSummaryText == "0 DTC") {
+            return when (lang) {
+                AppLanguage.AR -> "0 أكواد أعطال مسجلة (مخزنة أو معلقة أو دائمة) ✓"
+                AppLanguage.FR -> "0 code défaut (enregistré, en attente ou permanent) ✓"
+                AppLanguage.EN -> "0 fault codes found (stored, pending, or permanent) ✓"
+            }
+        }
+        return when (lang) {
+            AppLanguage.AR -> "تم رصد $dtcCount كود عطل: $dtcSummaryText"
+            AppLanguage.FR -> "$dtcCount code(s) défaut trouvé(s) : $dtcSummaryText"
+            AppLanguage.EN -> "$dtcCount fault code(s) found: $dtcSummaryText"
+        }
+    }
+
+    fun getClearedCodesText(lang: AppLanguage): String {
+        if (!isScanned || !isCommunicationSuccess) {
+            return when (lang) {
+                AppLanguage.AR -> "غير متوفر في هذه السيارة"
+                AppLanguage.FR -> "Non disponible sur cette voiture"
+                AppLanguage.EN -> "Not available on this car"
+            }
+        }
+        val distPartFr = distanceSinceClearedKm?.takeIf { it >= 0 }?.let { "$it km depuis effacement" }
+        val warmPartFr = warmupsSinceCleared?.takeIf { it >= 0 }?.let { "$it cycles de chauffe" }
+        val detailsFr = listOfNotNull(distPartFr, warmPartFr).joinToString(", ")
+
+        val distPartAr = distanceSinceClearedKm?.takeIf { it >= 0 }?.let { "$it كم منذ المسح" }
+        val warmPartAr = warmupsSinceCleared?.takeIf { it >= 0 }?.let { "$it دورات تسخين" }
+        val detailsAr = listOfNotNull(distPartAr, warmPartAr).joinToString("، ")
+
+        val distPartEn = distanceSinceClearedKm?.takeIf { it >= 0 }?.let { "$it km since clearing" }
+        val warmPartEn = warmupsSinceCleared?.takeIf { it >= 0 }?.let { "$it warm-ups" }
+        val detailsEn = listOfNotNull(distPartEn, warmPartEn).joinToString(", ")
+
+        return when (clearedCodesStatus) {
+            "STRONG_WARNING" -> when (lang) {
+                AppLanguage.AR -> "⚠️ تنبيه: تم مسح ذاكرة الأعطال حديثاً (${detailsAr.ifBlank { "مسافة قصيرة جداً" }})"
+                AppLanguage.FR -> "⚠️ Attention : mémoire effacée très récemment (${detailsFr.ifBlank { "faible kilométrage" }})"
+                AppLanguage.EN -> "⚠️ Warning: fault memory cleared very recently (${detailsEn.ifBlank { "short distance/warm-ups" }})"
+            }
+            "CANNOT_RULE_OUT" -> when (lang) {
+                AppLanguage.AR -> "لا يمكن الجزم بعدم مسح الأعطال حديثاً (اختبارات الجاهزية غير مكتملة وعداد المسافة غير متوفر)"
+                AppLanguage.FR -> "Impossible d'exclure un effacement récent (moniteurs incomplets, kilométrage depuis effacement non disponible)"
+                AppLanguage.EN -> "Cannot rule out recent code clearing (readiness monitors incomplete; distance counter not available on this car)"
+            }
+            "NONE_NORMAL" -> when (lang) {
+                AppLanguage.AR -> "طبيعي — لا يوجد مؤشر على مسح حديث للذاكرة${if (detailsAr.isNotBlank()) " ($detailsAr)" else ""} ✓"
+                AppLanguage.FR -> "Normal — aucun signe d'effacement récent${if (detailsFr.isNotBlank()) " ($detailsFr)" else ""} ✓"
+                AppLanguage.EN -> "Normal — no sign of recent code clearing${if (detailsEn.isNotBlank()) " ($detailsEn)" else ""} ✓"
+            }
+            else -> when (lang) {
+                AppLanguage.AR -> "غير متوفر في هذه السيارة"
+                AppLanguage.FR -> "Non disponible sur cette voiture"
+                AppLanguage.EN -> "Not available on this car"
+            }
+        }
+    }
+
+    fun getCheckEngineLightText(lang: AppLanguage): String {
+        if (!isScanned) {
+            return when (lang) {
+                AppLanguage.AR -> "لم يُفحص"
+                AppLanguage.FR -> "Non vérifié"
+                AppLanguage.EN -> "Not checked"
+            }
+        }
+        if (!milBulbLitAtKeyOn) {
+            return when (lang) {
+                AppLanguage.AR -> "⚠️ حرج: لمبة المحرك (Check Engine) لم تضئ عند فتح الكونتاكت (احتمال تعطيل أو إخفاء اللمبة)"
+                AppLanguage.FR -> "⚠️ CRITIQUE : Le voyant Check-Engine ne s'est PAS allumé au contact (ampoule grillée ou masquée)"
+                AppLanguage.EN -> "⚠️ CRITICAL: Check-Engine light did NOT light up at key-on (bulb burnt out or masked)"
+            }
+        }
+        return when (milCommandedByEcu) {
+            "ON" -> when (lang) {
+                AppLanguage.AR -> "اللمبة تعمل عند الكونتاكت، والكمبيوتر يأمر بإضاءتها (يوجد عطل نشط)"
+                AppLanguage.FR -> "Voyant fonctionnel au contact, commandé ALLUMÉ par le calculateur (défaut actif)"
+                AppLanguage.EN -> "Bulb works at key-on; commanded ON by ECU (active fault present)"
+            }
+            "OFF" -> when (lang) {
+                AppLanguage.AR -> "سليم — تضيء عند فتح الكونتاكت وتنطفئ بعد التشغيل ✓"
+                AppLanguage.FR -> "Conforme — s'allume au contact et s'éteint normalement ✓"
+                AppLanguage.EN -> "Normal — lights up at key-on and turns off normally ✓"
+            }
+            else -> when (lang) {
+                AppLanguage.AR -> "اللمبة تضيء عند الكونتاكت (حالة أمر الكمبيوتر غير متوفرة)"
+                AppLanguage.FR -> "Voyant présent au contact (état MIL calculateur non disponible)"
+                AppLanguage.EN -> "Bulb lights up at key-on (ECU MIL command status not available)"
+            }
+        }
+    }
+
+    fun getChassisComparisonText(lang: AppLanguage): String {
+        if (!isScanned || ecuVin.isBlank()) {
+            return when (lang) {
+                AppLanguage.AR -> "غير متوفر في هذه السيارة (الكمبيوتر لا يدعم قراءة رقم الشاسيه 09 02)"
+                AppLanguage.FR -> "Non disponible sur cette voiture (service 09 02 non supporté par le calculateur)"
+                AppLanguage.EN -> "Not available on this car (Service 09 02 not supported by ECU)"
+            }
+        }
+        return when (ecuVinComparison) {
+            "SAME" -> when (lang) {
+                AppLanguage.AR -> "مطابق للبطاقة الرمادية ($ecuVin) ✓"
+                AppLanguage.FR -> "Identique à la carte grise ($ecuVin) ✓"
+                AppLanguage.EN -> "Matches the carte grise ($ecuVin) ✓"
+            }
+            "DIFFERENT" -> when (lang) {
+                AppLanguage.AR -> "⚠️ حرج: رقم الشاسيه في الكمبيوتر ($ecuVin) مختلف عن البطاقة الرمادية!"
+                AppLanguage.FR -> "⚠️ CRITIQUE : N° de châssis calculateur ($ecuVin) DIFFÉRENT de la carte grise !"
+                AppLanguage.EN -> "⚠️ CRITICAL: ECU chassis number ($ecuVin) is DIFFERENT from the carte grise!"
+            }
+            else -> when (lang) {
+                AppLanguage.AR -> "مقروء من الكمبيوتر ($ecuVin) — لم تتم مقارنته بالبطاقة الرمادية"
+                AppLanguage.FR -> "Lu dans le calculateur ($ecuVin) — Non comparé à la carte grise"
+                AppLanguage.EN -> "Read from ECU ($ecuVin) — Could not compare with carte grise"
+            }
+        }
     }
 }
 
@@ -68,7 +243,8 @@ data class InspectionReportData(
     val totalApplicableCount: Int,
     val coveragePercent: Int,
     val hasObdScanIncluded: Boolean,
-    val obdSummaryNote: String?
+    val obdSummaryNote: String?,
+    val obdBlock: ObdReportBlockData
 ) {
     fun getVerdictTitle(lang: AppLanguage): String = when (verdict) {
         "INCOMPLETE" -> when (lang) {
@@ -90,6 +266,37 @@ data class InspectionReportData(
             AppLanguage.AR -> "تنبيه هام — تستوجب رأي ميكانيكي أو تجنبها (À éviter)"
             AppLanguage.FR -> "Attention — Risque élevé / Avis mécanicien requis"
             AppLanguage.EN -> "High Risk — Mechanic Opinion Required / Walk Away"
+        }
+    }
+
+    /**
+     * Explicit one-line explanation required by Phase 5 when a critical problem caps the score at 42:
+     * Shows both the capped score (42) and raw score, and names the critical item(s).
+     */
+    fun getCriticalCapOneLineExplanation(lang: AppLanguage): String? {
+        if (!isCriticalCapTriggered || overallScore == null || rawUncappedScore == null || criticalProblems.isEmpty()) {
+            return null
+        }
+        val names = criticalProblems.joinToString(if (lang == AppLanguage.AR) " ، " else "; ") {
+            it.getQuestion(lang)
+        }
+        val count = criticalProblems.size
+        return when (lang) {
+            AppLanguage.AR -> if (count == 1) {
+                "تم تقييد النتيجة عند $overallScore (النتيجة الخام من الفحص: $rawUncappedScore/100) بسبب مشكلة حرجة واحدة: $names"
+            } else {
+                "تم تقييد النتيجة عند $overallScore (النتيجة الخام من الفحص: $rawUncappedScore/100) بسبب $count مشاكل حرجة: $names"
+            }
+            AppLanguage.FR -> if (count == 1) {
+                "Score plafonné à $overallScore (score brut checklist : $rawUncappedScore/100) à cause d'un problème critique : $names"
+            } else {
+                "Score plafonné à $overallScore (score brut checklist : $rawUncappedScore/100) à cause de $count problèmes critiques : $names"
+            }
+            AppLanguage.EN -> if (count == 1) {
+                "Score capped at $overallScore (raw checklist score: $rawUncappedScore/100) because of 1 critical problem: $names"
+            } else {
+                "Score capped at $overallScore (raw checklist score: $rawUncappedScore/100) because of $count critical problems: $names"
+            }
         }
     }
 
@@ -117,15 +324,19 @@ data class InspectionReportData(
         }
 
         val mainSummary = when {
-            isCriticalCapTriggered -> when (lang) {
-                AppLanguage.AR -> "تم تقييد النتيجة القصوى إلى $overallScore/100 (بدلاً من $rawUncappedScore/100) بسبب رصد ${criticalProblems.size} نقطة حرجة تمس سلامة الشاسيه، المحرك أو الوثائق. هذا الأمر يستحق رأي ميكانيكي مختص قبل دفع أي مبلغ."
-                AppLanguage.FR -> "Le score a été plafonné à $overallScore/100 (score brut : $rawUncappedScore/100) car ${criticalProblems.size} anomalie(s) critique(s) ont été relevées (châssis, moteur, calculateur ou documents). Cela mérite l'avis d'un mécanicien avant tout engagement."
-                AppLanguage.EN -> "The score was capped at $overallScore/100 (uncapped: $rawUncappedScore/100) because ${criticalProblems.size} critical finding(s) were recorded. This deserves a trusted mechanic's opinion before committing."
+            isCriticalCapTriggered -> {
+                val capLine = getCriticalCapOneLineExplanation(lang) ?: ""
+                val advice = when (lang) {
+                    AppLanguage.AR -> "هذا الأمر يستوجب رأي ميكانيكي مختص قبل دفع أي مبلغ."
+                    AppLanguage.FR -> "Cela mérite l'avis d'un mécanicien avant tout engagement."
+                    AppLanguage.EN -> "This deserves a trusted mechanic's opinion before committing."
+                }
+                "$capLine. $advice"
             }
             verdict == "NEGOTIATE" -> when (lang) {
-                AppLanguage.AR -> "لم يتم رصد عيوب هيكلية قاتلة، لكن توجد ${negotiableProblems.size} ملاحظات تحتاج صيانة بتكلفة تقديرية بين ${ReportEngine.formatDzd(minTotalRepairDzd)} و ${ReportEngine.formatDzd(maxTotalRepairDzd)}. استخدم هذه القائمة للتفاوض الهادئ مع البائع."
-                AppLanguage.FR -> "Aucun défaut critique bloquant n'a été relevé, mais ${negotiableProblems.size} point(s) nécessitent des frais estimés entre ${ReportEngine.formatDzd(minTotalRepairDzd)} et ${ReportEngine.formatDzd(maxTotalRepairDzd)}. Utilisez ce chiffrage pour négocier sereinement."
-                AppLanguage.EN -> "No critical deal-breakers were found, but ${negotiableProblems.size} item(s) need attention costing roughly ${ReportEngine.formatDzd(minTotalRepairDzd)} to ${ReportEngine.formatDzd(maxTotalRepairDzd)}. Use this breakdown to negotiate a fair price."
+                AppLanguage.AR -> "لم يتم رصد عيوب هيكلية قاتلة، لكن توجد ${negotiableProblems.size} ملاحظات تحتاج صيانة. اطلب من الميكانيكي تقدير تكلفة إصلاحها واخصمها من السعر المطلوب."
+                AppLanguage.FR -> "Aucun défaut critique bloquant n'a été relevé, mais ${negotiableProblems.size} point(s) nécessitent des réparations. Faites chiffrer ces points par votre mécanicien pour négocier le prix."
+                AppLanguage.EN -> "No critical deal-breakers were found, but ${negotiableProblems.size} item(s) need attention. Have your mechanic quote the repair cost for these items and deduct it from the asking price."
             }
             else -> when (lang) {
                 AppLanguage.AR -> "اجتازت السيارة النقاط المفحوصة بنجاح ($checkedCount/$totalApplicableCount نقطة مفحوصة)."
@@ -149,7 +360,14 @@ object ReportEngine {
             model = inspection.carModel,
             fuelType = inspection.fuelType,
             gearboxType = inspection.gearboxType,
-            isQuickMode = isQuickMode
+            isQuickMode = isQuickMode,
+            generation = inspection.carGeneration,
+            engineDescription = inspection.engineDescription,
+            carYear = inspection.carYear,
+            odometerKm = inspection.odometerKm,
+            hasTurbo = inspection.hasTurbo,
+            isFourWheelDrive = inspection.isFourWheelDrive,
+            bodyType = inspection.bodyType
         )
 
         val answersById = savedAnswers.associateBy { it.itemId }
@@ -175,6 +393,8 @@ object ReportEngine {
                 }
             }
 
+            // Phase 5 Rule: Never use unverified DZD numbers. Only use item costs if VERIFIED_BY_MECHANIC.
+            val isCostVerified = def.verificationStatus == VerificationStatus.VERIFIED_BY_MECHANIC
             allFindings.add(
                 ReportFindingItem(
                     itemId = def.id,
@@ -189,12 +409,13 @@ object ReportEngine {
                     explanationEn = if (status == "PROBLEM") def.badResultEn else def.goodResultEn,
                     status = status,
                     severity = def.severity,
-                    minCostDzd = if (status == "PROBLEM") def.minRepairCostDzd else 0,
-                    maxCostDzd = if (status == "PROBLEM") def.maxRepairCostDzd else 0,
-                    avgCostDzd = if (status == "PROBLEM") def.getAverageCostDzd() else 0,
+                    minCostDzd = if (status == "PROBLEM" && isCostVerified) def.minRepairCostDzd else 0,
+                    maxCostDzd = if (status == "PROBLEM" && isCostVerified) def.maxRepairCostDzd else 0,
+                    avgCostDzd = if (status == "PROBLEM" && isCostVerified) def.getAverageCostDzd() else 0,
                     buyerNote = saved?.note ?: "",
                     photoUri = saved?.photoUri,
-                    isKnownModelWeakPoint = def.isKnownModelWeakPoint
+                    isKnownModelWeakPoint = def.isKnownModelWeakPoint,
+                    verificationStatus = def.verificationStatus
                 )
             )
         }
@@ -218,9 +439,6 @@ object ReportEngine {
                     }
                 }
             }
-            val estAvg = obdSaved.estimatedCostDzd
-            val estMin = (estAvg * 0.7).toInt()
-            val estMax = (estAvg * 1.35).toInt()
             allFindings.add(
                 ReportFindingItem(
                     itemId = obdSaved.itemId,
@@ -235,12 +453,13 @@ object ReportEngine {
                     explanationEn = obdSaved.note.ifBlank { "OBD2 ECU scan performed" },
                     status = obdSaved.status,
                     severity = obdSeverity,
-                    minCostDzd = if (obdSaved.status == "PROBLEM") estMin else 0,
-                    maxCostDzd = if (obdSaved.status == "PROBLEM") estMax else 0,
-                    avgCostDzd = if (obdSaved.status == "PROBLEM") estAvg else 0,
+                    minCostDzd = 0,
+                    maxCostDzd = 0,
+                    avgCostDzd = 0,
                     buyerNote = obdSaved.note,
                     photoUri = null,
-                    isKnownModelWeakPoint = false
+                    isKnownModelWeakPoint = false,
+                    verificationStatus = VerificationStatus.TO_BE_VERIFIED
                 )
             )
         }
@@ -289,9 +508,17 @@ object ReportEngine {
             }
         }
 
-        val minTotalDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.minCostDzd }
-        val maxTotalDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.maxCostDzd }
-        val avgTotalDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.avgCostDzd }
+        // Only use user-entered mechanic quote (or verified costs if any exist)
+        val userMechanicQuoteDzd = inspection.userQuotedRepairDzd.coerceAtLeast(0)
+        val verifiedMinDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.minCostDzd }
+        val verifiedMaxDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.maxCostDzd }
+        val verifiedAvgDzd = allFindings.filter { it.status == "PROBLEM" }.sumOf { it.avgCostDzd }
+
+        val effectiveMinDzd = if (userMechanicQuoteDzd > 0) userMechanicQuoteDzd else verifiedMinDzd
+        val effectiveMaxDzd = if (userMechanicQuoteDzd > 0) userMechanicQuoteDzd else verifiedMaxDzd
+        val effectiveAvgDzd = if (userMechanicQuoteDzd > 0) userMechanicQuoteDzd else verifiedAvgDzd
+
+        val obdBlock = buildObdReportBlock(inspection, obdSaved)
 
         return InspectionReportData(
             inspection = inspection,
@@ -307,14 +534,79 @@ object ReportEngine {
             uncheckedCriticalItems = uncheckedCriticalItems,
             minimumRequiredCount = minimumRequiredCount,
             isMinimumThresholdMet = isMinimumThresholdMet,
-            minTotalRepairDzd = minTotalDzd,
-            maxTotalRepairDzd = maxTotalDzd,
-            avgTotalRepairDzd = avgTotalDzd,
+            minTotalRepairDzd = effectiveMinDzd,
+            maxTotalRepairDzd = effectiveMaxDzd,
+            avgTotalRepairDzd = effectiveAvgDzd,
             checkedCount = checkedCount,
             totalApplicableCount = totalApplicableCount,
             coveragePercent = coveragePercent,
-            hasObdScanIncluded = obdSaved != null,
-            obdSummaryNote = obdSaved?.note
+            hasObdScanIncluded = obdBlock.isScanned,
+            obdSummaryNote = obdSaved?.note,
+            obdBlock = obdBlock
+        )
+    }
+
+    private fun buildObdReportBlock(
+        inspection: InspectionEntity,
+        obdSaved: ChecklistAnswerEntity?
+    ): ObdReportBlockData {
+        if (inspection.hasObdScan) {
+            return ObdReportBlockData(
+                isScanned = true,
+                isCommunicationSuccess = inspection.obdCommunicationSuccess,
+                protocolDescription = inspection.obdProtocolDescription,
+                dtcCount = inspection.obdDtcCount,
+                dtcSummaryText = inspection.obdDtcCodesSummary,
+                clearedCodesStatus = inspection.obdClearedStatus,
+                distanceSinceClearedKm = inspection.obdDistanceSinceClearedKm.takeIf { it >= 0 },
+                warmupsSinceCleared = inspection.obdWarmupsSinceCleared.takeIf { it >= 0 },
+                milBulbLitAtKeyOn = inspection.obdMilBulbLitAtKeyOn,
+                milCommandedByEcu = inspection.obdMilCommandedByEcu,
+                ecuVin = inspection.obdEcuVin.ifBlank { inspection.vin },
+                ecuVinComparison = inspection.obdEcuVinComparison
+            )
+        }
+        if (obdSaved != null) {
+            val note = obdSaved.note
+            val isCommOk = obdSaved.status != "UNCHECKED"
+            val hasClearedWarn = note.contains("remise à zéro", ignoreCase = true) ||
+                note.contains("effacée", ignoreCase = true)
+            val hasMilWarn = note.contains("Voyant Check-Engine absent", ignoreCase = true)
+            val hasVinDiff = note.contains("différent de la carte grise", ignoreCase = true)
+            val hasVinSame = note.contains("= Carte grise", ignoreCase = true)
+            return ObdReportBlockData(
+                isScanned = true,
+                isCommunicationSuccess = isCommOk,
+                protocolDescription = "",
+                dtcCount = if (note.contains("0 DTC")) 0 else if (obdSaved.status == "PROBLEM" && !hasClearedWarn && !hasMilWarn && !hasVinDiff) 1 else 0,
+                dtcSummaryText = note.removePrefix("[OBD2 Scan: ").substringBefore(" |").removeSuffix("]"),
+                clearedCodesStatus = if (hasClearedWarn) "STRONG_WARNING" else if (isCommOk) "NONE_NORMAL" else "NOT_AVAILABLE",
+                distanceSinceClearedKm = null,
+                warmupsSinceCleared = null,
+                milBulbLitAtKeyOn = !hasMilWarn,
+                milCommandedByEcu = "NOT_AVAILABLE",
+                ecuVin = inspection.vin,
+                ecuVinComparison = when {
+                    hasVinDiff -> "DIFFERENT"
+                    hasVinSame -> "SAME"
+                    inspection.vin.isNotBlank() -> "COULD_NOT_COMPARE"
+                    else -> "NOT_AVAILABLE"
+                }
+            )
+        }
+        return ObdReportBlockData(
+            isScanned = false,
+            isCommunicationSuccess = false,
+            protocolDescription = "",
+            dtcCount = 0,
+            dtcSummaryText = "",
+            clearedCodesStatus = "NOT_AVAILABLE",
+            distanceSinceClearedKm = null,
+            warmupsSinceCleared = null,
+            milBulbLitAtKeyOn = true,
+            milCommandedByEcu = "NOT_AVAILABLE",
+            ecuVin = inspection.vin,
+            ecuVinComparison = if (inspection.vin.isNotBlank()) "COULD_NOT_COMPARE" else "NOT_AVAILABLE"
         )
     }
 
@@ -350,8 +642,20 @@ object ReportEngine {
     }
 
     /**
-     * Calculates a fair negotiation offer range in DZD given the seller's asking price in Millions de centimes.
-     * Returns Pair(minSuggestedOfferDzd, maxSuggestedOfferDzd)
+     * Phase 5: Calculates the target offer in DZD by subtracting ONLY the repair cost
+     * quoted by the user's own mechanic from the seller's asking price (in Millions de centimes).
+     */
+    fun calculateFairOfferFromMechanicQuoteDzd(
+        askingPriceMillions: Double,
+        mechanicQuotedRepairDzd: Int
+    ): Int {
+        val askingDzd = (askingPriceMillions * 10000.0).toInt().coerceAtLeast(0)
+        val safeQuote = mechanicQuotedRepairDzd.coerceAtLeast(0)
+        return (askingDzd - safeQuote).coerceAtLeast(0)
+    }
+
+    /**
+     * Legacy range helper kept for compatibility; uses exact mechanic quote when min == max.
      */
     fun calculateFairOfferRangeDzd(
         askingPriceMillions: Double,
@@ -359,8 +663,8 @@ object ReportEngine {
         maxRepairDzd: Int
     ): Pair<Int, Int> {
         val askingDzd = (askingPriceMillions * 10000.0).toInt().coerceAtLeast(0)
-        val minOffer = (askingDzd - maxRepairDzd).coerceAtLeast(0)
-        val maxOffer = (askingDzd - minRepairDzd).coerceAtLeast(0)
+        val minOffer = (askingDzd - maxRepairDzd.coerceAtLeast(0)).coerceAtLeast(0)
+        val maxOffer = (askingDzd - minRepairDzd.coerceAtLeast(0)).coerceAtLeast(0)
         return Pair(minOffer, maxOffer)
     }
 }

@@ -140,8 +140,20 @@ dependencies {
   androidTestImplementation(libs.androidx.runner)
   debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
-  "ksp"(libs.androidx.room.compiler)
+  add("kspDebug", libs.androidx.room.compiler)
+  add("kspRelease", libs.androidx.room.compiler)
   // "ksp"(libs.moshi.kotlin.codegen)
+}
+
+// Guard against KSP's shaded IntelliJ ApplicationManager late AWT-EventQueue disposal NPE
+val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+  val stackMatchesKsp = throwable.stackTrace.any { it.className.startsWith("ksp.com.intellij.") }
+  if (thread.name.startsWith("AWT-EventQueue") && stackMatchesKsp) {
+    // Ignore benign post-disposal AWT callback from KSP's embedded IntelliJ environment
+    return@setDefaultUncaughtExceptionHandler
+  }
+  previousHandler?.uncaughtException(thread, throwable)
 }
 
 tasks.withType<Test> {

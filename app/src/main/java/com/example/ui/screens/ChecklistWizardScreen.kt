@@ -16,6 +16,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -84,6 +86,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -95,6 +98,7 @@ import com.example.data.local.InspectionEntity
 import com.example.data.model.ChecklistItemDefinition
 import com.example.data.model.ChecklistSection
 import com.example.data.model.ItemSeverity
+import com.example.data.model.VerificationStatus
 import com.example.domain.ChecklistEngine
 import java.io.File
 import com.example.ui.theme.Emerald100
@@ -123,6 +127,7 @@ import com.example.ui.theme.StatusWarningAmber
 import com.example.ui.theme.StatusWarningAmberContainer
 import com.example.ui.theme.StatusWarningAmberOnContainer
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChecklistWizardScreen(
     inspection: InspectionEntity,
@@ -148,8 +153,15 @@ fun ChecklistWizardScreen(
     val adaptiveItems = remember(
         inspection.carBrand,
         inspection.carModel,
+        inspection.carGeneration,
+        inspection.carYear,
+        inspection.odometerKm,
         inspection.fuelType,
         inspection.gearboxType,
+        inspection.engineDescription,
+        inspection.hasTurbo,
+        inspection.isFourWheelDrive,
+        inspection.bodyType,
         isQuickMode
     ) {
         ChecklistEngine.buildChecklistForCar(
@@ -157,7 +169,14 @@ fun ChecklistWizardScreen(
             model = inspection.carModel,
             fuelType = inspection.fuelType,
             gearboxType = inspection.gearboxType,
-            isQuickMode = isQuickMode
+            isQuickMode = isQuickMode,
+            generation = inspection.carGeneration,
+            engineDescription = inspection.engineDescription,
+            carYear = inspection.carYear,
+            odometerKm = inspection.odometerKm,
+            hasTurbo = inspection.hasTurbo,
+            isFourWheelDrive = inspection.isFourWheelDrive,
+            bodyType = inspection.bodyType
         )
     }
 
@@ -286,12 +305,14 @@ fun ChecklistWizardScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
                         onClick = onPauseAndExit,
-                        modifier = Modifier.testTag("wizard_pause_exit_btn")
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag("wizard_pause_exit_btn")
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -300,15 +321,34 @@ fun ChecklistWizardScreen(
                         )
                     }
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
+                    ) {
+                        Text(
+                            text = "${inspection.carBrand} ${inspection.carModel}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Slate900,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             Text(
-                                text = "${inspection.carBrand} ${inspection.carModel}",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Slate900
+                                text = currentItem.section.getTitle(language),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Emerald700,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
                                 color = Emerald50,
@@ -319,16 +359,12 @@ fun ChecklistWizardScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = Emerald800,
+                                    maxLines = 1,
+                                    softWrap = false,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
-                        Text(
-                            text = currentItem.section.getTitle(language),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Emerald700
-                        )
                     }
 
                     // Question Counter Pill
@@ -341,6 +377,8 @@ fun ChecklistWizardScreen(
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
@@ -383,6 +421,8 @@ fun ChecklistWizardScreen(
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (isCurrentSection) FontWeight.Bold else FontWeight.Medium,
                                 color = if (isCurrentSection) Color.White else Slate700,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
                         }
@@ -399,111 +439,122 @@ fun ChecklistWizardScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Auto-save, OBD2 Scanner Quick Action & Quick->Full Extension Banner
-            Row(
+            // Auto-save, OBD2 Scanner Quick Action & Quick->Full Extension Banner (Responsive FlowRow)
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Save,
-                        contentDescription = null,
-                        tint = Emerald700,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Slate100
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Save,
+                            contentDescription = null,
+                            tint = Emerald700,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = when (language) {
+                                AppLanguage.AR -> "حفظ تلقائي ($answeredCount/${adaptiveItems.size})"
+                                AppLanguage.FR -> "Sauvegarde auto ($answeredCount/${adaptiveItems.size})"
+                                AppLanguage.EN -> "Auto-saved ($answeredCount/${adaptiveItems.size})"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Slate700,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+
+                val hasObdScanned = answersMap.containsKey("obd_ecu_diagnostic_scan")
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onOpenObdScanner() }
+                        .testTag("wizard_open_obd_btn"),
+                    color = if (hasObdScanned) StatusPassGreenContainer else Emerald100,
+                    border = BorderStroke(1.dp, if (hasObdScanned) StatusPassGreen else Emerald600)
+                ) {
                     Text(
-                        text = when (language) {
-                            AppLanguage.AR -> "حفظ تلقائي ($answeredCount/${adaptiveItems.size})"
-                            AppLanguage.FR -> "Sauvegarde auto ($answeredCount/${adaptiveItems.size})"
-                            AppLanguage.EN -> "Auto-saved ($answeredCount/${adaptiveItems.size})"
+                        text = if (hasObdScanned) {
+                            when (language) {
+                                AppLanguage.AR -> "OBD2 مفحوص ✓"
+                                AppLanguage.FR -> "OBD2 Scanné ✓"
+                                AppLanguage.EN -> "OBD2 Scanned ✓"
+                            }
+                        } else {
+                            when (language) {
+                                AppLanguage.AR -> "⚡ فحص OBD2"
+                                AppLanguage.FR -> "⚡ Scanner OBD2"
+                                AppLanguage.EN -> "⚡ Scan OBD2"
+                            }
                         },
                         style = MaterialTheme.typography.labelSmall,
-                        color = Slate600
+                        fontWeight = FontWeight.Bold,
+                        color = if (hasObdScanned) StatusPassGreenOnContainer else Emerald900,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                     )
                 }
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            val statusMap = answersMap.mapValues { it.value.status }
+                            val (score, verdict, totalDzd) = ChecklistEngine.calculateScoreAndVerdict(
+                                answers = statusMap,
+                                items = adaptiveItems
+                            )
+                            onFinishInspection(score, verdict, totalDzd)
+                        }
+                        .testTag("wizard_open_report_btn"),
+                    color = Slate900
                 ) {
-                    val hasObdScanned = answersMap.containsKey("obd_ecu_diagnostic_scan")
-                    Surface(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onOpenObdScanner() }
-                            .testTag("wizard_open_obd_btn"),
-                        color = if (hasObdScanned) StatusPassGreenContainer else Emerald100,
-                        border = BorderStroke(1.dp, if (hasObdScanned) StatusPassGreen else Emerald600)
-                    ) {
-                        Text(
-                            text = if (hasObdScanned) {
-                                when (language) {
-                                    AppLanguage.AR -> "OBD2 مفحوص ✓"
-                                    AppLanguage.FR -> "OBD2 Scanné ✓"
-                                    AppLanguage.EN -> "OBD2 Scanned ✓"
-                                }
-                            } else {
-                                when (language) {
-                                    AppLanguage.AR -> "⚡ فحص OBD2"
-                                    AppLanguage.FR -> "⚡ Scanner OBD2"
-                                    AppLanguage.EN -> "⚡ Scan OBD2"
-                                }
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (hasObdScanned) StatusPassGreenOnContainer else Emerald900,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
+                    Text(
+                        text = when (language) {
+                            AppLanguage.AR -> "📄 التقرير والـ PDF"
+                            AppLanguage.FR -> "📄 Rapport & PDF"
+                            AppLanguage.EN -> "📄 Report & PDF"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                    )
+                }
 
+                if (isQuickMode) {
                     Surface(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                val statusMap = answersMap.mapValues { it.value.status }
-                                val (score, verdict, totalDzd) = ChecklistEngine.calculateScoreAndVerdict(
-                                    answers = statusMap,
-                                    items = adaptiveItems
-                                )
-                                onFinishInspection(score, verdict, totalDzd)
-                            }
-                            .testTag("wizard_open_report_btn"),
-                        color = Slate900
+                            .clickable { onExtendToFullInspection() },
+                        color = StatusWarningAmberContainer
                     ) {
                         Text(
                             text = when (language) {
-                                AppLanguage.AR -> "📄 التقرير والـ PDF"
-                                AppLanguage.FR -> "📄 Rapport & PDF"
-                                AppLanguage.EN -> "📄 Report & PDF"
+                                AppLanguage.AR -> "+ فحص شامل"
+                                AppLanguage.FR -> "+ Mode complet"
+                                AppLanguage.EN -> "+ Full Check"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            color = StatusWarningAmberOnContainer,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                         )
-                    }
-
-                    if (isQuickMode) {
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onExtendToFullInspection() },
-                            color = StatusWarningAmberContainer
-                        ) {
-                            Text(
-                                text = when (language) {
-                                    AppLanguage.AR -> "+ فحص شامل"
-                                    AppLanguage.FR -> "+ Mode complet"
-                                    AppLanguage.EN -> "+ Full Check"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = StatusWarningAmberOnContainer,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
                     }
                 }
             }
@@ -513,6 +564,7 @@ fun ChecklistWizardScreen(
                 section = currentItem.section,
                 severity = currentItem.severity,
                 isKnownWeakPoint = currentItem.isKnownModelWeakPoint,
+                verificationStatus = currentItem.verificationStatus,
                 minCostDzd = currentItem.minRepairCostDzd,
                 maxCostDzd = currentItem.maxRepairCostDzd,
                 whereToLook = currentItem.getWhereToLook(language),
@@ -554,7 +606,12 @@ fun ChecklistWizardScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 8.dp)
+                                ) {
                                     Icon(
                                         imageVector = Icons.Default.HelpOutline,
                                         contentDescription = null,
@@ -779,7 +836,9 @@ fun ChecklistWizardScreen(
                                     AppLanguage.EN -> "Take Photo"
                                 },
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
@@ -809,7 +868,9 @@ fun ChecklistWizardScreen(
                                     AppLanguage.EN -> "Gallery"
                                 },
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
@@ -835,7 +896,9 @@ fun ChecklistWizardScreen(
                                     AppLanguage.EN -> "Note"
                                 },
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -988,7 +1051,9 @@ fun ChecklistWizardScreen(
                             AppLanguage.FR -> "Précédent"
                             AppLanguage.EN -> "Previous"
                         },
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -1009,7 +1074,9 @@ fun ChecklistWizardScreen(
                                 AppLanguage.EN -> "Next Item"
                             },
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Icon(
@@ -1050,7 +1117,9 @@ fun ChecklistWizardScreen(
                                 AppLanguage.EN -> "Finish & Calculate Score"
                             },
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -1059,11 +1128,13 @@ fun ChecklistWizardScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CarZoneDiagramCard(
     section: ChecklistSection,
     severity: ItemSeverity,
     isKnownWeakPoint: Boolean,
+    verificationStatus: VerificationStatus,
     minCostDzd: Int,
     maxCostDzd: Int,
     whereToLook: String,
@@ -1145,9 +1216,9 @@ private fun CarZoneDiagramCard(
             Spacer(modifier = Modifier.width(14.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(
+                FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     val sevColor = when (severity) {
                         ItemSeverity.CRITICAL -> StatusErrorRed
@@ -1163,6 +1234,8 @@ private fun CarZoneDiagramCard(
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
@@ -1181,6 +1254,23 @@ private fun CarZoneDiagramCard(
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = StatusWarningAmberContainer
+                        ) {
+                            Text(
+                                text = verificationStatus.getLabel(language),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusWarningAmberOnContainer,
+                                maxLines = 1,
+                                softWrap = false,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
                         }
@@ -1205,7 +1295,7 @@ private fun CarZoneDiagramCard(
                     )
                 }
 
-                if (maxCostDzd > 0) {
+                if (maxCostDzd > 0 && verificationStatus == VerificationStatus.VERIFIED_BY_MECHANIC) {
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = when (language) {

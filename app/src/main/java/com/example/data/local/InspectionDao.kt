@@ -34,6 +34,9 @@ interface InspectionDao {
     @Query("SELECT * FROM checklist_answers WHERE inspectionId = :inspectionId")
     fun getAnswersForInspection(inspectionId: Long): Flow<List<ChecklistAnswerEntity>>
 
+    @Query("SELECT * FROM checklist_answers")
+    fun getAllAnswers(): Flow<List<ChecklistAnswerEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAnswer(answer: ChecklistAnswerEntity): Long
 

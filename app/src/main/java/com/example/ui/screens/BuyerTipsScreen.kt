@@ -1,9 +1,12 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -49,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.i18n.AppLanguage
@@ -73,6 +78,7 @@ import com.example.ui.theme.StatusErrorRed
 import com.example.ui.theme.StatusPassGreen
 import com.example.ui.theme.StatusWarningAmber
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BuyerTipsScreen(
     language: AppLanguage,
@@ -135,7 +141,7 @@ fun BuyerTipsScreen(
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = Strings.buyerTipsTitle(language),
                                 style = MaterialTheme.typography.titleLarge,
@@ -159,8 +165,8 @@ fun BuyerTipsScreen(
                     Text(
                         text = when (language) {
                             AppLanguage.AR -> "موسوعة المشتري الجزائري: نصائح كشف التحايل، نقاط الضعف المعروفة لكل سيارة في السوق، وقاموس أكواد الأعطال OBD2 بالدارجة والعربية والفرنسية."
-                            AppLanguage.FR -> "Encyclopédie de l'acheteur en Algérie : conseils anti-fraude, points faibles par modèle et dictionnaire des codes défauts OBD2 avec coûts en DZD."
-                            AppLanguage.EN -> "Algerian Buyer's Encyclopedia: anti-fraud guide, model-specific weak points, and offline OBD2 fault code dictionary with DZD repair costs."
+                            AppLanguage.FR -> "Encyclopédie de l'acheteur en Algérie : conseils anti-fraude, points faibles par modèle et dictionnaire des codes défauts OBD2."
+                            AppLanguage.EN -> "Algerian Buyer's Encyclopedia: anti-fraud guide, model-specific weak points, and offline OBD2 fault code dictionary."
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = Slate200,
@@ -173,7 +179,9 @@ fun BuyerTipsScreen(
         // Section Switcher Pills
         item {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilterChip(
@@ -277,10 +285,10 @@ fun BuyerTipsScreen(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(
+                            FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
@@ -294,7 +302,9 @@ fun BuyerTipsScreen(
                                         text = "${car.brand} ${car.model}",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = Slate900
+                                        color = Slate900,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 Surface(
@@ -306,6 +316,8 @@ fun BuyerTipsScreen(
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = Emerald900,
+                                        maxLines = 1,
+                                        softWrap = false,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
@@ -391,10 +403,10 @@ fun BuyerTipsScreen(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(
+                            FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
@@ -405,16 +417,24 @@ fun BuyerTipsScreen(
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = badgeColor,
+                                        maxLines = 1,
+                                        softWrap = false,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                     )
                                 }
 
-                                if (dtc.maxCostDzd > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Slate100
+                                ) {
                                     Text(
-                                        text = "${ReportEngine.formatDzd(dtc.minCostDzd)} – ${ReportEngine.formatDzd(dtc.maxCostDzd)}",
+                                        text = dtc.verificationStatus.getLabel(language),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = Slate700
+                                        color = Slate700,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                                     )
                                 }
                             }

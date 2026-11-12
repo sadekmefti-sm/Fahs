@@ -36,7 +36,8 @@ object PdfReportGenerator {
         context: Context,
         report: InspectionReportData,
         language: AppLanguage,
-        sellerAskingMillions: Double? = null
+        sellerAskingMillions: Double? = null,
+        mechanicQuotedRepairDzd: Int? = null
     ): File {
         val reportsDir = File(context.cacheDir, "reports")
         if (!reportsDir.exists()) {
@@ -137,27 +138,43 @@ object PdfReportGenerator {
             AppLanguage.FR -> "RAPPORT D'INSPECTION AUTOMOBILE — FAHS (فحص)"
             AppLanguage.EN -> "PRE-PURCHASE VEHICLE INSPECTION REPORT — FAHS (فحص)"
         }
-        val carHeaderLine = "${report.inspection.carBrand} ${report.inspection.carModel} (${report.inspection.carYear}) • ${report.inspection.fuelType} • ${report.inspection.gearboxType} • $dateStr"
+        val odoPart = if (report.inspection.odometerKm > 0) " • ${report.inspection.odometerKm} km" else ""
+        val carHeaderLine = "${report.inspection.carBrand} ${report.inspection.carModel} (${report.inspection.carYear})$odoPart • ${report.inspection.fuelType} • ${report.inspection.gearboxType} • $dateStr"
 
         drawMultilineText(canvas, bannerTitle, whiteTitlePaint, MARGIN_H + 16f, yPos + 14f, CONTENT_WIDTH - 32, alignment)
         drawMultilineText(canvas, carHeaderLine, whiteSubPaint, MARGIN_H + 16f, yPos + 44f, CONTENT_WIDTH - 32, alignment)
         yPos += 90f
 
-        // 2. Overall Score & Verdict Box
+        // 2. Overall Score & Verdict Box (including both Raw Score and Capped Score + 1-line explanation when capped)
         val verdictBoxPaint = when (report.verdict) {
             "INCOMPLETE" -> boxBgPaint
             "GOOD" -> greenBoxPaint
             "NEGOTIATE" -> amberBoxPaint
             else -> redBoxPaint
         }
-        val verdictText = if (report.overallScore != null) {
-            "${report.overallScore}/100 — ${report.getVerdictTitle(language)}"
+        val scoreHeaderPrefix = if (report.overallScore != null) {
+            if (report.isCriticalCapTriggered && report.rawUncappedScore != null) {
+                val rawLabel = when (language) {
+                    AppLanguage.AR -> "النتيجة المقيّدة: ${report.overallScore}/100 (النتيجة الخام: ${report.rawUncappedScore}/100)"
+                    AppLanguage.FR -> "Score plafonné : ${report.overallScore}/100 (Score brut : ${report.rawUncappedScore}/100)"
+                    AppLanguage.EN -> "Capped Score: ${report.overallScore}/100 (Raw Score: ${report.rawUncappedScore}/100)"
+                }
+                "$rawLabel — ${report.getVerdictTitle(language)}"
+            } else {
+                "${report.overallScore}/100 — ${report.getVerdictTitle(language)}"
+            }
         } else {
             report.getVerdictTitle(language)
         }
+        val capOneLine = report.getCriticalCapOneLineExplanation(language)
         val summaryText = report.getVerdictSummary(language)
-        val estimatedSummaryLines = (summaryText.length / 72) + 2
-        val verdictBoxHeight = (46f + estimatedSummaryLines * 14f).coerceAtLeast(82f)
+        val combinedSummary = if (capOneLine != null && !summaryText.contains(capOneLine)) {
+            "$capOneLine\n$summaryText"
+        } else {
+            summaryText
+        }
+        val estimatedSummaryLines = (combinedSummary.length / 68) + 3
+        val verdictBoxHeight = (48f + estimatedSummaryLines * 14f).coerceAtLeast(86f)
 
         canvas.drawRoundRect(
             RectF(MARGIN_H, yPos, PAGE_WIDTH - MARGIN_H, yPos + verdictBoxHeight),
@@ -165,57 +182,121 @@ object PdfReportGenerator {
             10f,
             verdictBoxPaint
         )
-        drawMultilineText(canvas, verdictText, sectionTitlePaint, MARGIN_H + 14f, yPos + 10f, CONTENT_WIDTH - 28, alignment)
-        drawMultilineText(canvas, summaryText, bodyPaint, MARGIN_H + 14f, yPos + 32f, CONTENT_WIDTH - 28, alignment)
-        yPos += verdictBoxHeight + 14f
+        drawMultilineText(canvas, scoreHeaderPrefix, sectionTitlePaint, MARGIN_H + 14f, yPos + 10f, CONTENT_WIDTH - 28, alignment)
+        drawMultilineText(canvas, combinedSummary, bodyPaint, MARGIN_H + 14f, yPos + 32f, CONTENT_WIDTH - 28, alignment)
+        yPos += verdictBoxHeight + 12f
 
-        // 3. Optional Plate Label, ECU Chassis Number (if read) & Repair Cost Summary Box
-        val ecuVinPart = if (report.inspection.vin.isNotBlank()) {
-            "N° Châssis ECU (09 02): ${report.inspection.vin}   |   "
-        } else ""
+        // 3. Optional Plate Label & User-Entered Mechanic Quote / Fair Offer Box
         val plateText = if (report.inspection.plateNumber.isNotBlank()) report.inspection.plateNumber else "—"
+        val effectiveAskingMillions = sellerAskingMillions?.takeIf { it > 0.0 }
+            ?: report.inspection.sellerAskingPriceMillions.takeIf { it > 0.0 }
+        val effectiveMechanicQuoteDzd = mechanicQuotedRepairDzd?.takeIf { it > 0 }
+            ?: report.inspection.userQuotedRepairDzd.takeIf { it > 0 }
 
-        val costRangeLine = when (language) {
-            AppLanguage.AR -> "التكلفة التقديرية للإصلاحات: ${ReportEngine.formatDzd(report.minTotalRepairDzd)} إلى ${ReportEngine.formatDzd(report.maxTotalRepairDzd)} (${ReportEngine.formatMillionsCentimes(report.avgTotalRepairDzd, language)})"
-            AppLanguage.FR -> "Frais de remise en état estimés : ${ReportEngine.formatDzd(report.minTotalRepairDzd)} à ${ReportEngine.formatDzd(report.maxTotalRepairDzd)} (~${ReportEngine.formatMillionsCentimes(report.avgTotalRepairDzd, language)})"
-            AppLanguage.EN -> "Estimated Repair Range: ${ReportEngine.formatDzd(report.minTotalRepairDzd)} to ${ReportEngine.formatDzd(report.maxTotalRepairDzd)} (~${ReportEngine.formatMillionsCentimes(report.avgTotalRepairDzd, language)})"
+        val quoteLine = if (effectiveMechanicQuoteDzd != null) {
+            when (language) {
+                AppLanguage.AR -> "تكلفة الإصلاح المقدرة من الميكانيكي (مدخلة من المستخدم): ${ReportEngine.formatAlgerianCurrency(effectiveMechanicQuoteDzd, language)}"
+                AppLanguage.FR -> "Devis réparations mécanicien (saisi par l'acheteur) : ${ReportEngine.formatAlgerianCurrency(effectiveMechanicQuoteDzd, language)}"
+                AppLanguage.EN -> "Mechanic's Quoted Repair Cost (user-entered): ${ReportEngine.formatAlgerianCurrency(effectiveMechanicQuoteDzd, language)}"
+            }
+        } else {
+            when (language) {
+                AppLanguage.AR -> "تكلفة الإصلاح: لم يتم إدخال تسعيرة ميكانيكي بعد"
+                AppLanguage.FR -> "Coût des réparations : aucun devis mécanicien saisi"
+                AppLanguage.EN -> "Repair cost: no mechanic quote entered yet"
+            }
         }
 
-        val offerLine = if (sellerAskingMillions != null && sellerAskingMillions > 0) {
-            val (minOffer, maxOffer) = ReportEngine.calculateFairOfferRangeDzd(
-                sellerAskingMillions,
-                report.minTotalRepairDzd,
-                report.maxTotalRepairDzd
+        val offerLine = if (effectiveAskingMillions != null && effectiveAskingMillions > 0) {
+            val quoteToSubtract = effectiveMechanicQuoteDzd ?: 0
+            val targetOfferDzd = ReportEngine.calculateFairOfferFromMechanicQuoteDzd(
+                askingPriceMillions = effectiveAskingMillions,
+                mechanicQuotedRepairDzd = quoteToSubtract
             )
             when (language) {
-                AppLanguage.AR -> "السعر المطلوب: ${sellerAskingMillions.toInt()} مليون • العرض المقترح بعد خصم الإصلاح: ${ReportEngine.formatMillionsCentimes(minOffer, language)} إلى ${ReportEngine.formatMillionsCentimes(maxOffer, language)}"
-                AppLanguage.FR -> "Prix demandé : ${sellerAskingMillions.toInt()} Millions • Offre suggérée après déduction : ${ReportEngine.formatMillionsCentimes(minOffer, language)} à ${ReportEngine.formatMillionsCentimes(maxOffer, language)}"
-                AppLanguage.EN -> "Asking Price: ${sellerAskingMillions.toInt()}M • Suggested Offer After Repairs: ${ReportEngine.formatMillionsCentimes(minOffer, language)} to ${ReportEngine.formatMillionsCentimes(maxOffer, language)}"
+                AppLanguage.AR -> "السعر المطلوب: ${effectiveAskingMillions.toInt()} مليون • السعر المقترح بعد خصم تسعيرة الميكانيكي: ${ReportEngine.formatMillionsCentimes(targetOfferDzd, language)} (${ReportEngine.formatDzd(targetOfferDzd)})"
+                AppLanguage.FR -> "Prix demandé : ${effectiveAskingMillions.toInt()} Millions • Offre cible après déduction du devis : ${ReportEngine.formatMillionsCentimes(targetOfferDzd, language)} (${ReportEngine.formatDzd(targetOfferDzd)})"
+                AppLanguage.EN -> "Asking Price: ${effectiveAskingMillions.toInt()}M • Target Offer After Mechanic Quote: ${ReportEngine.formatMillionsCentimes(targetOfferDzd, language)} (${ReportEngine.formatDzd(targetOfferDzd)})"
             }
         } else ""
 
+        val box3Height = if (offerLine.isNotBlank()) 68f else 48f
         canvas.drawRoundRect(
-            RectF(MARGIN_H, yPos, PAGE_WIDTH - MARGIN_H, yPos + 74f),
+            RectF(MARGIN_H, yPos, PAGE_WIDTH - MARGIN_H, yPos + box3Height),
             10f,
             10f,
             boxBgPaint
         )
         drawMultilineText(
             canvas,
-            "${ecuVinPart}Repère / Immatriculation: $plateText",
+            "Repère / Immatriculation: $plateText",
             bodyBoldPaint,
             MARGIN_H + 12f,
-            yPos + 10f,
+            yPos + 8f,
             CONTENT_WIDTH - 24,
             alignment
         )
-        drawMultilineText(canvas, costRangeLine, redTextPaint, MARGIN_H + 12f, yPos + 28f, CONTENT_WIDTH - 24, alignment)
+        drawMultilineText(canvas, quoteLine, bodyPaint, MARGIN_H + 12f, yPos + 24f, CONTENT_WIDTH - 24, alignment)
         if (offerLine.isNotBlank()) {
-            drawMultilineText(canvas, offerLine, bodyPaint, MARGIN_H + 12f, yPos + 46f, CONTENT_WIDTH - 24, alignment)
+            drawMultilineText(canvas, offerLine, bodyBoldPaint, MARGIN_H + 12f, yPos + 42f, CONTENT_WIDTH - 24, alignment)
         }
-        yPos += 88f
+        yPos += box3Height + 12f
 
-        // 4. Critical & Negotiable Problems Section
+        // 4. Dedicated OBD2 Diagnostic Block in the PDF
+        startNewPageIfNeeded(125f)
+        val obdBlock = report.obdBlock
+        val obdBoxPaint = if (!obdBlock.isScanned) {
+            boxBgPaint
+        } else if (obdBlock.hasCriticalAlert) {
+            redBoxPaint
+        } else {
+            greenBoxPaint
+        }
+        val obdHeader = when (language) {
+            AppLanguage.AR -> "نتائج الفحص الإلكتروني للكمبيوتر (OBD2)"
+            AppLanguage.FR -> "Bloc Diagnostic Électronique OBD2 (Calculateur)"
+            AppLanguage.EN -> "OBD2 Electronic Diagnostic Findings"
+        }
+        val obdLines = listOf(
+            when (language) {
+                AppLanguage.AR -> "• حالة الاتصال: ${obdBlock.getConnectionStatusText(language)}"
+                AppLanguage.FR -> "• État de connexion : ${obdBlock.getConnectionStatusText(language)}"
+                AppLanguage.EN -> "• Connection status: ${obdBlock.getConnectionStatusText(language)}"
+            },
+            when (language) {
+                AppLanguage.AR -> "• أكواد الأعطال: ${obdBlock.getFaultCodesText(language)}"
+                AppLanguage.FR -> "• Codes défauts : ${obdBlock.getFaultCodesText(language)}"
+                AppLanguage.EN -> "• Fault codes found: ${obdBlock.getFaultCodesText(language)}"
+            },
+            when (language) {
+                AppLanguage.AR -> "• حالة مسح الذاكرة: ${obdBlock.getClearedCodesText(language)}"
+                AppLanguage.FR -> "• Effacement récent : ${obdBlock.getClearedCodesText(language)}"
+                AppLanguage.EN -> "• Cleared-codes status: ${obdBlock.getClearedCodesText(language)}"
+            },
+            when (language) {
+                AppLanguage.AR -> "• فحص لمبة المحرك (Check Engine): ${obdBlock.getCheckEngineLightText(language)}"
+                AppLanguage.FR -> "• Voyant Check-Engine : ${obdBlock.getCheckEngineLightText(language)}"
+                AppLanguage.EN -> "• Check-Engine light check: ${obdBlock.getCheckEngineLightText(language)}"
+            },
+            when (language) {
+                AppLanguage.AR -> "• مقارنة رقم الشاسيه الإلكتروني (09 02): ${obdBlock.getChassisComparisonText(language)}"
+                AppLanguage.FR -> "• Comparaison N° de châssis ECU (09 02) : ${obdBlock.getChassisComparisonText(language)}"
+                AppLanguage.EN -> "• Chassis-number comparison (09 02): ${obdBlock.getChassisComparisonText(language)}"
+            }
+        )
+        val obdContentText = obdLines.joinToString("\n")
+        val obdBoxHeight = 114f
+        canvas.drawRoundRect(
+            RectF(MARGIN_H, yPos, PAGE_WIDTH - MARGIN_H, yPos + obdBoxHeight),
+            10f,
+            10f,
+            obdBoxPaint
+        )
+        drawMultilineText(canvas, obdHeader, sectionTitlePaint, MARGIN_H + 12f, yPos + 8f, CONTENT_WIDTH - 24, alignment)
+        drawMultilineText(canvas, obdContentText, bodyPaint, MARGIN_H + 12f, yPos + 28f, CONTENT_WIDTH - 24, alignment)
+        yPos += obdBoxHeight + 14f
+
+        // 5. Critical & Negotiable Problems Section
         val allProblems = report.criticalProblems + report.negotiableProblems
         val problemsHeader = when (language) {
             AppLanguage.AR -> "1. العيوب والملاحظات المرصودة (${allProblems.size})"
@@ -268,7 +349,7 @@ object PdfReportGenerator {
 
         yPos += 8f
 
-        // 5. Unchecked Items Section (Honest disclosure including all unchecked critical items)
+        // 6. Unchecked Items Section (Honest disclosure including all unchecked critical items)
         startNewPageIfNeeded(34f)
         val uncheckedHeader = when (language) {
             AppLanguage.AR -> "2. نقاط لم يتم فحصها (${report.uncheckedItems.size} من أصل ${report.totalApplicableCount})"
@@ -309,7 +390,7 @@ object PdfReportGenerator {
 
         yPos += 8f
 
-        // 6. Passed Items Summary
+        // 7. Passed Items Summary
         startNewPageIfNeeded(34f)
         val passedHeader = when (language) {
             AppLanguage.AR -> "3. النقاط السليمة (${report.passedItems.size})"
@@ -351,9 +432,16 @@ object PdfReportGenerator {
         context: Context,
         report: InspectionReportData,
         language: AppLanguage,
-        sellerAskingMillions: Double? = null
+        sellerAskingMillions: Double? = null,
+        mechanicQuotedRepairDzd: Int? = null
     ): File {
-        val pdfFile = generatePdfFile(context, report, language, sellerAskingMillions)
+        val pdfFile = generatePdfFile(
+            context = context,
+            report = report,
+            language = language,
+            sellerAskingMillions = sellerAskingMillions,
+            mechanicQuotedRepairDzd = mechanicQuotedRepairDzd
+        )
         val uri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
@@ -423,9 +511,9 @@ object PdfReportGenerator {
             textSize = 8.5f
         }
         val disclaimer = when (language) {
-            AppLanguage.AR -> "تطبيق فحص (Fahs) — الأسعار التقديرية بالدينار الجزائري استرشادية وتختلف حسب الولاية ونوع قطع الغيار. الصفحة $pageNum"
-            AppLanguage.FR -> "Généré hors-ligne par Fahs (فحص) — Les coûts en DZD sont indicatifs selon la wilaya et le type de pièce. Page $pageNum"
-            AppLanguage.EN -> "Generated offline by Fahs (فحص) — DZD repair estimates are indicative and vary by wilaya. Page $pageNum"
+            AppLanguage.AR -> "تطبيق فحص (Fahs) — أداة مساعدة للمشتري ولا تغني عن الفحص الميكانيكي على رافعة في الورشة. الصفحة $pageNum"
+            AppLanguage.FR -> "Généré hors-ligne par Fahs (فحص) — Aide à l'achat, ne remplace pas un contrôle sur pont en atelier. Page $pageNum"
+            AppLanguage.EN -> "Generated offline by Fahs (فحص) — Buying aid; does not replace a workshop inspection on a lift. Page $pageNum"
         }
         canvas.drawText(disclaimer, MARGIN_H, PAGE_HEIGHT - 18f, footerPaint)
     }

@@ -307,7 +307,7 @@ fun MainScreen(
                         language = currentLanguage,
                         initialQuickMode = preferredQuickMode,
                         onBack = { viewModel.selectTab(NavTab.HOME) },
-                        onCarConfirmed = { brand, model, generation, year, fuel, gearbox, engine, isQuick, plateNumber ->
+                        onCarConfirmed = { brand, model, generation, year, fuel, gearbox, engine, isQuick, plateNumber, odometerKm, hasTurbo, isFourWheelDrive, bodyType ->
                             viewModel.createConfiguredInspection(
                                 brand = brand,
                                 model = model,
@@ -317,7 +317,11 @@ fun MainScreen(
                                 gearboxType = gearbox,
                                 engineDesc = engine,
                                 isQuickMode = isQuick,
-                                plateNumber = plateNumber
+                                plateNumber = plateNumber,
+                                odometerKm = odometerKm,
+                                hasTurbo = hasTurbo,
+                                isFourWheelDrive = isFourWheelDrive,
+                                bodyType = bodyType
                             )
                         }
                     )
@@ -408,6 +412,9 @@ fun MainScreen(
                             onOpenObdScanner = {
                                 viewModel.selectTab(NavTab.OBD)
                             },
+                            onSaveNegotiationInputs = { askingMillions, mechanicQuoteDzd ->
+                                viewModel.saveUserNegotiationInputs(askingMillions, mechanicQuoteDzd)
+                            },
                             onPdfGeneratedNotification = { msg ->
                                 scope.launch {
                                     snackbarHostState.showSnackbar(msg)
@@ -420,9 +427,11 @@ fun MainScreen(
                 }
 
                 NavTab.INSPECTIONS -> {
+                    val allAnswersMap by viewModel.allAnswersByInspectionId.collectAsStateWithLifecycle()
                     SavedInspectionsScreen(
                         language = currentLanguage,
                         inspections = inspections,
+                        answersByInspectionId = allAnswersMap,
                         cloudUserEmail = cloudUserEmail,
                         cloudUserName = cloudUserName,
                         isCloudSyncing = isCloudSyncing,

@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,21 +22,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.ListAlt
-import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -47,7 +40,6 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -61,16 +53,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.core.i18n.AppLanguage
 import com.example.core.i18n.Strings
 import com.example.data.model.AlgerianCarCatalog
 import com.example.data.model.AlgerianCarModel
+import com.example.data.model.CarBodyType
+import com.example.domain.ChecklistEngine
 import com.example.ui.theme.Emerald100
 import com.example.ui.theme.Emerald200
 import com.example.ui.theme.Emerald50
@@ -80,12 +74,10 @@ import com.example.ui.theme.Emerald800
 import com.example.ui.theme.Emerald900
 import com.example.ui.theme.Slate100
 import com.example.ui.theme.Slate200
-import com.example.ui.theme.Slate300
 import com.example.ui.theme.Slate400
 import com.example.ui.theme.Slate50
 import com.example.ui.theme.Slate600
 import com.example.ui.theme.Slate700
-import com.example.ui.theme.Slate800
 import com.example.ui.theme.Slate900
 import com.example.ui.theme.StatusWarningAmber
 import com.example.ui.theme.StatusWarningAmberContainer
@@ -106,7 +98,11 @@ fun CarSelectionScreen(
         gearboxType: String,
         engineDesc: String,
         isQuickMode: Boolean,
-        plateNumber: String
+        plateNumber: String,
+        odometerKm: Int,
+        hasTurbo: Boolean,
+        isFourWheelDrive: Boolean,
+        bodyType: String
     ) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -118,16 +114,23 @@ fun CarSelectionScreen(
     // Configuration states when a car or "Other car" is selected
     var selectedGeneration by remember { mutableStateOf("") }
     var selectedYear by remember { mutableIntStateOf(2018) }
+    var yearInputText by remember { mutableStateOf("2018") }
+    var odometerInputText by remember { mutableStateOf("") }
     var selectedFuel by remember { mutableStateOf("ESSENCE") }
     var selectedGearbox by remember { mutableStateOf("MANUELLE") }
     var selectedEngine by remember { mutableStateOf("") }
+    var selectedBodyType by remember { mutableStateOf(CarBodyType.CITADINE.name) }
+    var hasTurbo by remember { mutableStateOf(false) }
+    var isFourWheelDrive by remember { mutableStateOf(false) }
     var isQuickMode by remember { mutableStateOf(initialQuickMode) }
     var optionalPlateLabel by remember { mutableStateOf("") }
 
     // Custom "Other Car" states
     var customBrand by remember { mutableStateOf("") }
     var customModel by remember { mutableStateOf("") }
-    var customBodyType by remember { mutableStateOf("Berline / Citadine") }
+
+    val parsedOdometerKm = odometerInputText.filter { it.isDigit() }.toIntOrNull() ?: 0
+    val parsedYear = yearInputText.filter { it.isDigit() }.toIntOrNull()?.takeIf { it in 1985..2026 } ?: selectedYear
 
     val filteredModels = remember(searchQuery, selectedBrandFilter) {
         AlgerianCarCatalog.models.filter { car ->
@@ -136,6 +139,68 @@ fun CarSelectionScreen(
             val matchesQuery = com.example.data.model.AlgerianCarCatalogExtra.matchesFuzzySearch(car, searchQuery)
             matchesBrand && matchesQuery
         }
+    }
+
+    val effectiveBrandForPreview = selectedCar?.brand ?: customBrand.ifBlank { "Autre" }
+    val effectiveModelForPreview = selectedCar?.model ?: customModel.ifBlank { "Véhicule" }
+    val effectiveGenForPreview = selectedGeneration.ifBlank { selectedBodyType }
+
+    val quickModeItemCount = remember(
+        effectiveBrandForPreview,
+        effectiveModelForPreview,
+        effectiveGenForPreview,
+        parsedYear,
+        selectedFuel,
+        selectedGearbox,
+        selectedEngine,
+        parsedOdometerKm,
+        hasTurbo,
+        isFourWheelDrive,
+        selectedBodyType
+    ) {
+        ChecklistEngine.buildChecklistForCar(
+            brand = effectiveBrandForPreview,
+            model = effectiveModelForPreview,
+            fuelType = selectedFuel,
+            gearboxType = selectedGearbox,
+            isQuickMode = true,
+            generation = effectiveGenForPreview,
+            engineDescription = selectedEngine,
+            carYear = parsedYear,
+            odometerKm = parsedOdometerKm,
+            hasTurbo = hasTurbo,
+            isFourWheelDrive = isFourWheelDrive,
+            bodyType = selectedBodyType
+        ).size
+    }
+
+    val fullModeItemCount = remember(
+        effectiveBrandForPreview,
+        effectiveModelForPreview,
+        effectiveGenForPreview,
+        parsedYear,
+        selectedFuel,
+        selectedGearbox,
+        selectedEngine,
+        parsedOdometerKm,
+        hasTurbo,
+        isFourWheelDrive,
+        selectedBodyType
+    ) {
+        ChecklistEngine.buildChecklistForCar(
+            brand = effectiveBrandForPreview,
+            model = effectiveModelForPreview,
+            fuelType = selectedFuel,
+            gearboxType = selectedGearbox,
+            isQuickMode = false,
+            generation = effectiveGenForPreview,
+            engineDescription = selectedEngine,
+            carYear = parsedYear,
+            odometerKm = parsedOdometerKm,
+            hasTurbo = hasTurbo,
+            isFourWheelDrive = isFourWheelDrive,
+            bodyType = selectedBodyType
+        ).size
     }
 
     Column(
@@ -191,23 +256,27 @@ fun CarSelectionScreen(
                         },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Slate900
+                        color = Slate900,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = when {
                             selectedCar != null || isOtherCarMode -> when (language) {
-                                AppLanguage.AR -> "الخطوة 2 من 2: حدد المحرك، الوقود ونوع الفحص"
-                                AppLanguage.FR -> "Étape 2/2 : Motorisation, carburant et mode"
-                                AppLanguage.EN -> "Step 2/2: Engine, fuel & inspection mode"
+                                AppLanguage.AR -> "الخطوة 2 من 2: حدد السنة، الكيلومترات، المحرك ونوع الفحص"
+                                AppLanguage.FR -> "Étape 2/2 : Année, kilométrage, motorisation et mode"
+                                AppLanguage.EN -> "Step 2/2: Year, mileage, engine & inspection mode"
                             }
                             else -> when (language) {
-                                AppLanguage.AR -> "الخطوة 1 من 2: أشهر 10 سيارات في السوق الجزائري أو بحث"
-                                AppLanguage.FR -> "Étape 1/2 : Top 10 marché algérien ou recherche"
-                                AppLanguage.EN -> "Step 1/2: Top 10 Algerian models or search"
+                                AppLanguage.AR -> "الخطوة 1 من 2: اختر الموديل من القائمة أو ابحث"
+                                AppLanguage.FR -> "Étape 1/2 : Catalogue marché algérien ou recherche"
+                                AppLanguage.EN -> "Step 1/2: Algerian market catalogue or search"
                             }
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = Slate600
+                        color = Slate600,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -271,9 +340,9 @@ fun CarSelectionScreen(
                             val isSelected = selectedBrandFilter == brand
                             val label = if (brand == "All") {
                                 when (language) {
-                                    AppLanguage.AR -> "الكل (Top 10)"
-                                    AppLanguage.FR -> "Tous (Top 10 DZ)"
-                                    AppLanguage.EN -> "All (Top 10 DZ)"
+                                    AppLanguage.AR -> "الكل"
+                                    AppLanguage.FR -> "Toutes marques"
+                                    AppLanguage.EN -> "All Brands"
                                 }
                             } else brand
 
@@ -307,9 +376,14 @@ fun CarSelectionScreen(
                             val firstGen = car.generations.first()
                             selectedGeneration = firstGen.name
                             selectedYear = firstGen.defaultYear
+                            yearInputText = firstGen.defaultYear.toString()
                             selectedFuel = car.availableFuels.first()
                             selectedGearbox = car.availableGearboxes.first()
-                            selectedEngine = car.commonEngines.first()
+                            val firstEng = car.commonEngines.first()
+                            selectedEngine = firstEng
+                            selectedBodyType = car.defaultBodyType
+                            hasTurbo = ChecklistEngine.inferHasTurbo(selectedFuel, firstEng)
+                            isFourWheelDrive = false
                         }
                     )
                 }
@@ -321,9 +395,15 @@ fun CarSelectionScreen(
                             .fillMaxWidth()
                             .clickable {
                                 isOtherCarMode = true
+                                selectedGeneration = ""
                                 selectedYear = 2016
+                                yearInputText = "2016"
                                 selectedFuel = "ESSENCE"
                                 selectedGearbox = "MANUELLE"
+                                selectedEngine = "1.2 / 1.4 / 1.6 Essence"
+                                selectedBodyType = CarBodyType.BERLINE.name
+                                hasTurbo = false
+                                isFourWheelDrive = false
                             }
                             .testTag("other_car_card"),
                         shape = RoundedCornerShape(16.dp),
@@ -362,9 +442,9 @@ fun CarSelectionScreen(
                                 )
                                 Text(
                                     text = when (language) {
-                                        AppLanguage.AR -> "أجب عن 4 أسئلة بسيطة (الوقود، علبة السرعة، السنة، الصنف) ليتكيف الفحص معها"
-                                        AppLanguage.FR -> "Répondez à 4 questions (carburant, boîte, année, carrosserie) pour adapter l'inspection"
-                                        AppLanguage.EN -> "Answer 4 quick questions (fuel, gearbox, year, body) to adapt the checklist"
+                                        AppLanguage.AR -> "حدد الوقود، علبة السرعة، السنة، الكيلومترات ونوع الهيكل ليتكيف الفحص معها بالكامل"
+                                        AppLanguage.FR -> "Indiquez carburant, boîte, année, kilométrage et carrosserie pour adapter toute l'inspection"
+                                        AppLanguage.EN -> "Specify fuel, gearbox, year, mileage, and body type for a fully adapted checklist"
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Emerald800
@@ -392,9 +472,9 @@ fun CarSelectionScreen(
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
                                     text = when (language) {
-                                        AppLanguage.AR -> "بيانات السيارة"
-                                        AppLanguage.FR -> "Identité du véhicule"
-                                        AppLanguage.EN -> "Vehicle Identity"
+                                        AppLanguage.AR -> "بيانات السيارة ونوع الهيكل"
+                                        AppLanguage.FR -> "Identité et carrosserie du véhicule"
+                                        AppLanguage.EN -> "Vehicle Identity & Body Type"
                                     },
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
@@ -407,9 +487,9 @@ fun CarSelectionScreen(
                                     label = {
                                         Text(
                                             when (language) {
-                                                AppLanguage.AR -> "العلامة (مثال: Toyota, Chery, Ford)"
-                                                AppLanguage.FR -> "Marque (ex: Toyota, Chery, Ford)"
-                                                AppLanguage.EN -> "Brand (e.g. Toyota, Chery, Ford)"
+                                                AppLanguage.AR -> "العلامة (مثال: Chery, Geely, Ford)"
+                                                AppLanguage.FR -> "Marque (ex: Chery, Geely, Ford)"
+                                                AppLanguage.EN -> "Brand (e.g. Chery, Geely, Ford)"
                                             }
                                         )
                                     },
@@ -423,15 +503,55 @@ fun CarSelectionScreen(
                                     label = {
                                         Text(
                                             when (language) {
-                                                AppLanguage.AR -> "الموديل (مثال: Yaris, Tiggo, Fiesta)"
-                                                AppLanguage.FR -> "Modèle (ex: Yaris, Tiggo, Fiesta)"
-                                                AppLanguage.EN -> "Model (e.g. Yaris, Tiggo, Fiesta)"
+                                                AppLanguage.AR -> "الموديل (مثال: Tiggo, Coolray, Ranger)"
+                                                AppLanguage.FR -> "Modèle (ex: Tiggo, Coolray, Ranger)"
+                                                AppLanguage.EN -> "Model (e.g. Tiggo, Coolray, Ranger)"
                                             }
                                         )
                                     },
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true
                                 )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = when (language) {
+                                        AppLanguage.AR -> "نوع الهيكل (يكيف أسئلة الصندوق، النوابض والدفع):"
+                                        AppLanguage.FR -> "Type de carrosserie (adapte les points châssis/suspension) :"
+                                        AppLanguage.EN -> "Body Type (adapts chassis & suspension checks):"
+                                    },
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Slate700
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    CarBodyType.entries.forEach { body ->
+                                        val isSelected = selectedBodyType == body.name
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                selectedBodyType = body.name
+                                                if (body == CarBodyType.PICKUP) {
+                                                    selectedFuel = "DIESEL"
+                                                    hasTurbo = true
+                                                }
+                                            },
+                                            label = {
+                                                Text(
+                                                    text = body.getLabel(language),
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                                )
+                                            },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = Emerald700,
+                                                selectedLabelColor = Color.White
+                                            )
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -446,24 +566,44 @@ fun CarSelectionScreen(
                             colors = CardDefaults.cardColors(containerColor = Emerald900)
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Info,
-                                        contentDescription = null,
-                                        tint = Emerald200,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = when (language) {
-                                            AppLanguage.AR -> "نقطة الفحص الخاصة بهذا الموديل"
-                                            AppLanguage.FR -> "Point de vigilance connu sur ce modèle"
-                                            AppLanguage.EN -> "Known Model Watchpoint"
-                                        },
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Emerald200
-                                    )
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = null,
+                                            tint = Emerald200,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = when (language) {
+                                                AppLanguage.AR -> "نقطة الفحص الخاصة بهذا الموديل"
+                                                AppLanguage.FR -> "Point de vigilance connu sur ce modèle"
+                                                AppLanguage.EN -> "Known Model Watchpoint"
+                                            },
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Emerald200
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = StatusWarningAmberContainer
+                                    ) {
+                                        Text(
+                                            text = car.weakPointVerificationStatus.getLabel(language),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = StatusWarningAmberOnContainer,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
+                                    }
                                 }
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
@@ -489,13 +629,13 @@ fun CarSelectionScreen(
                         }
                     }
 
-                    // Generation & Year Selector
+                    // Generation Selector
                     item {
                         ConfigSectionCard(
                             title = when (language) {
-                                AppLanguage.AR -> "1. الجيل وسنة الصنع"
-                                AppLanguage.FR -> "1. Génération et Année"
-                                AppLanguage.EN -> "1. Generation & Year"
+                                AppLanguage.AR -> "1. الجيل (Génération)"
+                                AppLanguage.FR -> "1. Génération du modèle"
+                                AppLanguage.EN -> "1. Model Generation"
                             }
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -508,6 +648,7 @@ fun CarSelectionScreen(
                                             .clickable {
                                                 selectedGeneration = gen.name
                                                 selectedYear = gen.defaultYear
+                                                yearInputText = gen.defaultYear.toString()
                                             },
                                         color = if (isSelected) Emerald50 else Slate100,
                                         border = BorderStroke(
@@ -520,7 +661,11 @@ fun CarSelectionScreen(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Column {
+                                            Column(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .padding(end = 8.dp)
+                                            ) {
                                                 Text(
                                                     text = gen.name,
                                                     style = MaterialTheme.typography.titleSmall,
@@ -548,14 +693,123 @@ fun CarSelectionScreen(
                     }
                 }
 
-                // Fuel Type Selector (Essence, Diesel, GPL)
+                // Year & Odometer Mileage Card (Asked for every car)
+                item {
+                    ConfigSectionCard(
+                        title = when (language) {
+                            AppLanguage.AR -> "2. سنة الصنع والكيلومترات المعروضة في العداد"
+                            AppLanguage.FR -> "2. Année et kilométrage affiché au compteur"
+                            AppLanguage.EN -> "2. Year & Mileage Shown on Odometer"
+                        }
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = yearInputText,
+                                    onValueChange = { raw ->
+                                        val digits = raw.filter { it.isDigit() }.take(4)
+                                        yearInputText = digits
+                                        digits.toIntOrNull()?.let { yr ->
+                                            if (yr in 1985..2026) selectedYear = yr
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(0.9f)
+                                        .testTag("car_year_input"),
+                                    label = {
+                                        Text(
+                                            when (language) {
+                                                AppLanguage.AR -> "سنة الصنع"
+                                                AppLanguage.FR -> "Année"
+                                                AppLanguage.EN -> "Year"
+                                            }
+                                        )
+                                    },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+
+                                OutlinedTextField(
+                                    value = odometerInputText,
+                                    onValueChange = { raw ->
+                                        odometerInputText = raw.filter { it.isDigit() }.take(7)
+                                    },
+                                    modifier = Modifier
+                                        .weight(1.3f)
+                                        .testTag("car_odometer_input"),
+                                    label = {
+                                        Text(
+                                            when (language) {
+                                                AppLanguage.AR -> "عداد الكيلومترات (كم)"
+                                                AppLanguage.FR -> "Kilométrage (km)"
+                                                AppLanguage.EN -> "Odometer (km)"
+                                            }
+                                        )
+                                    },
+                                    placeholder = {
+                                        Text(
+                                            when (language) {
+                                                AppLanguage.AR -> "مثال: 135000"
+                                                AppLanguage.FR -> "Ex: 135000"
+                                                AppLanguage.EN -> "e.g. 135000"
+                                            }
+                                        )
+                                    },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                            }
+
+                            Text(
+                                text = when (language) {
+                                    AppLanguage.AR -> "اختيار سريع لفئة الكيلومترات:"
+                                    AppLanguage.FR -> "Sélection rapide de la tranche kilométrique :"
+                                    AppLanguage.EN -> "Quick mileage band selection:"
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Slate600
+                            )
+
+                            val mileageBands = listOf(
+                                40000 to "< 60 000 km",
+                                95000 to "60k – 120k km",
+                                150000 to "120k – 180k km",
+                                210000 to "> 180 000 km"
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                mileageBands.forEach { (kmVal, label) ->
+                                    val isBandSelected = parsedOdometerKm == kmVal
+                                    FilterChip(
+                                        selected = isBandSelected,
+                                        onClick = { odometerInputText = kmVal.toString() },
+                                        label = { Text(label) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = Emerald700,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Fuel Type Selector (Essence, Diesel, GPL, Hybride)
                 item {
                     val fuels = selectedCar?.availableFuels ?: listOf("ESSENCE", "DIESEL", "GPL", "HYBRIDE")
                     ConfigSectionCard(
                         title = when (language) {
-                            AppLanguage.AR -> "2. نوع الوقود (يكيف أسئلة المحرك والغاز)"
-                            AppLanguage.FR -> "2. Carburant (adapte les contrôles moteur/GPL)"
-                            AppLanguage.EN -> "2. Fuel Type (adapts engine & LPG checks)"
+                            AppLanguage.AR -> "3. نوع الوقود (يكيف أسئلة المحرك والغاز)"
+                            AppLanguage.FR -> "3. Carburant (adapte les contrôles moteur/GPL)"
+                            AppLanguage.EN -> "3. Fuel Type (adapts engine & LPG checks)"
                         }
                     ) {
                         FlowRow(
@@ -566,7 +820,10 @@ fun CarSelectionScreen(
                                 val isSelected = selectedFuel == fuel
                                 FilterChip(
                                     selected = isSelected,
-                                    onClick = { selectedFuel = fuel },
+                                    onClick = {
+                                        selectedFuel = fuel
+                                        hasTurbo = ChecklistEngine.inferHasTurbo(fuel, selectedEngine)
+                                    },
                                     label = {
                                         Text(
                                             text = when (fuel) {
@@ -593,9 +850,9 @@ fun CarSelectionScreen(
                     val gearboxes = selectedCar?.availableGearboxes ?: listOf("MANUELLE", "AUTOMATIQUE")
                     ConfigSectionCard(
                         title = when (language) {
-                            AppLanguage.AR -> "3. علبة السرعة (La Boîte)"
-                            AppLanguage.FR -> "3. Boîte de vitesses"
-                            AppLanguage.EN -> "3. Gearbox Type"
+                            AppLanguage.AR -> "4. علبة السرعة (La Boîte)"
+                            AppLanguage.FR -> "4. Boîte de vitesses"
+                            AppLanguage.EN -> "4. Gearbox Type"
                         }
                     ) {
                         FlowRow(
@@ -623,43 +880,103 @@ fun CarSelectionScreen(
                     }
                 }
 
-                // Engine or Body Type
+                // Engine Variant + Turbo & 4x4 Conditions
                 item {
-                    val engines = selectedCar?.commonEngines ?: listOf("1.2 / 1.4 Essence", "1.6 MPI / GPL", "1.5 / 1.6 / 2.0 Diesel")
+                    val engines = selectedCar?.commonEngines ?: listOf(
+                        "1.2 / 1.4 / 1.6 Essence",
+                        "1.2 / 1.4 / 1.5 Turbo Essence",
+                        "1.6 MPI / GPL",
+                        "1.5 / 1.6 / 2.0 Turbo Diesel"
+                    )
                     ConfigSectionCard(
                         title = when (language) {
-                            AppLanguage.AR -> "4. المحرك (Motorisation)"
-                            AppLanguage.FR -> "4. Motorisation"
-                            AppLanguage.EN -> "4. Engine Variant"
+                            AppLanguage.AR -> "5. المحرك، التيربو والدفع الرباعي (4x4)"
+                            AppLanguage.FR -> "5. Motorisation, Turbo et Transmission 4x4"
+                            AppLanguage.EN -> "5. Engine, Turbo & 4x4 Drive"
                         }
                     ) {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            engines.forEach { eng ->
-                                val isSelected = selectedEngine == eng
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                engines.forEach { eng ->
+                                    val isSelected = selectedEngine == eng
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            selectedEngine = eng
+                                            hasTurbo = ChecklistEngine.inferHasTurbo(selectedFuel, eng)
+                                        },
+                                        label = { Text(eng) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = Slate900,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
                                 FilterChip(
-                                    selected = isSelected,
-                                    onClick = { selectedEngine = eng },
-                                    label = { Text(eng) },
+                                    selected = hasTurbo,
+                                    onClick = { hasTurbo = !hasTurbo },
+                                    label = {
+                                        Text(
+                                            text = when (language) {
+                                                AppLanguage.AR -> if (hasTurbo) "تيربو (Turbo) ✓" else "تيربو (Turbo)"
+                                                AppLanguage.FR -> if (hasTurbo) "Moteur Turbo ✓" else "Moteur Turbo"
+                                                AppLanguage.EN -> if (hasTurbo) "Turbocharged ✓" else "Turbocharged"
+                                            },
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    },
                                     colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Slate900,
+                                        selectedContainerColor = Emerald700,
                                         selectedLabelColor = Color.White
                                     )
                                 )
+
+                                val show4x4Option = isOtherCarMode ||
+                                    selectedCar?.hasFourWheelDriveOption == true ||
+                                    selectedBodyType == CarBodyType.SUV.name ||
+                                    selectedBodyType == CarBodyType.PICKUP.name
+
+                                if (show4x4Option) {
+                                    FilterChip(
+                                        selected = isFourWheelDrive,
+                                        onClick = { isFourWheelDrive = !isFourWheelDrive },
+                                        label = {
+                                            Text(
+                                                text = when (language) {
+                                                    AppLanguage.AR -> if (isFourWheelDrive) "دفع رباعي 4x4 ✓" else "دفع رباعي 4x4"
+                                                    AppLanguage.FR -> if (isFourWheelDrive) "Transmission 4x4 / AWD ✓" else "Transmission 4x4 / AWD"
+                                                    AppLanguage.EN -> if (isFourWheelDrive) "4x4 / AWD ✓" else "4x4 / AWD"
+                                                },
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = Emerald700,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                // Inspection Depth Selector (Quick 10m vs Full 40m)
+                // Inspection Depth Selector (Quick vs Full) with live adapted counts
                 item {
                     ConfigSectionCard(
                         title = when (language) {
-                            AppLanguage.AR -> "5. مستوى الفحص"
-                            AppLanguage.FR -> "5. Niveau d'inspection"
-                            AppLanguage.EN -> "5. Inspection Depth"
+                            AppLanguage.AR -> "6. مستوى الفحص"
+                            AppLanguage.FR -> "6. Niveau d'inspection"
+                            AppLanguage.EN -> "6. Inspection Depth"
                         }
                     ) {
                         Row(
@@ -686,10 +1003,10 @@ fun CarSelectionScreen(
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "15 " + when (language) {
-                                            AppLanguage.AR -> "نقطة حرجة"
-                                            AppLanguage.FR -> "points critiques"
-                                            AppLanguage.EN -> "critical checks"
+                                        text = "$quickModeItemCount " + when (language) {
+                                            AppLanguage.AR -> "نقطة أساسية مكيفة"
+                                            AppLanguage.FR -> "points essentiels adaptés"
+                                            AppLanguage.EN -> "adapted key checks"
                                         },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = Slate600
@@ -717,10 +1034,10 @@ fun CarSelectionScreen(
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "45 " + when (language) {
-                                            AppLanguage.AR -> "نقطة شاملة"
-                                            AppLanguage.FR -> "points complets"
-                                            AppLanguage.EN -> "complete checks"
+                                        text = "$fullModeItemCount " + when (language) {
+                                            AppLanguage.AR -> "نقطة شاملة مكيفة"
+                                            AppLanguage.FR -> "points complets adaptés"
+                                            AppLanguage.EN -> "adapted full checks"
                                         },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = Slate600
@@ -735,9 +1052,9 @@ fun CarSelectionScreen(
                 item {
                     ConfigSectionCard(
                         title = when (language) {
-                            AppLanguage.AR -> "6. رقم اللوحة أو علامة مميزة (اختياري)"
-                            AppLanguage.FR -> "6. Immatriculation ou repère (optionnel)"
-                            AppLanguage.EN -> "6. Plate Number or Label (Optional)"
+                            AppLanguage.AR -> "7. رقم اللوحة أو علامة مميزة (اختياري)"
+                            AppLanguage.FR -> "7. Immatriculation ou repère (optionnel)"
+                            AppLanguage.EN -> "7. Plate Number or Label (Optional)"
                         }
                     ) {
                         Column {
@@ -789,17 +1106,24 @@ fun CarSelectionScreen(
                         onClick = {
                             val finalBrand = selectedCar?.brand ?: customBrand.ifBlank { "Autre" }
                             val finalModel = selectedCar?.model ?: customModel.ifBlank { "Véhicule" }
-                            val finalGen = selectedGeneration.ifBlank { customBodyType }
+                            val finalGen = selectedGeneration.ifBlank {
+                                CarBodyType.entries.firstOrNull { it.name == selectedBodyType }?.getLabel(language)
+                                    ?: selectedBodyType
+                            }
                             onCarConfirmed(
                                 finalBrand,
                                 finalModel,
                                 finalGen,
-                                selectedYear,
+                                parsedYear,
                                 selectedFuel,
                                 selectedGearbox,
                                 selectedEngine,
                                 isQuickMode,
-                                optionalPlateLabel.trim()
+                                optionalPlateLabel.trim(),
+                                parsedOdometerKm,
+                                hasTurbo,
+                                isFourWheelDrive,
+                                selectedBodyType
                             )
                         },
                         modifier = Modifier
@@ -829,6 +1153,7 @@ fun CarSelectionScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CatalogCarCard(
     car: AlgerianCarModel,
@@ -851,7 +1176,12 @@ private fun CatalogCarCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                ) {
                     // Brand Monogram Badge
                     Box(
                         modifier = Modifier
@@ -869,18 +1199,21 @@ private fun CatalogCarCard(
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "${car.brand} ${car.model}",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = Slate900
+                            color = Slate900,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = car.generations.joinToString(" • ") { it.name },
                             style = MaterialTheme.typography.bodySmall,
                             color = Slate600,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -894,6 +1227,8 @@ private fun CatalogCarCard(
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = Emerald900,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
@@ -902,9 +1237,10 @@ private fun CatalogCarCard(
             Spacer(modifier = Modifier.height(10.dp))
 
             // Common Engines & Fuels Row
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 car.commonEngines.take(2).forEach { eng ->
                     Surface(
@@ -915,6 +1251,8 @@ private fun CatalogCarCard(
                             text = eng,
                             style = MaterialTheme.typography.labelSmall,
                             color = Slate700,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
@@ -929,6 +1267,8 @@ private fun CatalogCarCard(
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = StatusWarningAmberOnContainer,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }

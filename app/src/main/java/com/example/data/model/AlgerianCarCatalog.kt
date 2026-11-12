@@ -14,7 +14,20 @@ data class AlgerianCarModel(
     val obdPortHintEn: String,
     val keyWeakPointFr: String,
     val keyWeakPointAr: String,
-    val keyWeakPointEn: String
+    val keyWeakPointEn: String,
+    val defaultBodyType: String = when (id) {
+        "renault_symbol", "peugeot_301", "dacia_logan", "hyundai_accent", "skoda_octavia", "citroen_celysee", "fiat_tipo", "chevrolet_sail", "renault_fluence", "skoda_rapid", "toyota_corolla" -> "BERLINE"
+        "dacia_duster", "kia_sportage", "hyundai_tucson", "peugeot_2008_3008", "vw_caddy_tiguan", "seat_arona_ateca", "hyundai_santafe_creta", "nissan_qashqai_sunny", "chery_qq_tiggo", "geely_gx3_coolray" -> "SUV"
+        "renault_kangoo", "peugeot_partner", "citroen_berlingo", "chinese_haval_dfsk_jac" -> "UTILITAIRE"
+        "toyota_hilux", "mahindra_mitsubishi_pickup" -> "PICKUP"
+        else -> "CITADINE"
+    },
+    val hasFourWheelDriveOption: Boolean = id in setOf(
+        "dacia_duster", "toyota_hilux", "kia_sportage", "hyundai_tucson",
+        "vw_caddy_tiguan", "seat_arona_ateca", "hyundai_santafe_creta",
+        "nissan_qashqai_sunny", "chinese_haval_dfsk_jac", "mahindra_mitsubishi_pickup"
+    ),
+    val weakPointVerificationStatus: VerificationStatus = VerificationStatus.TO_BE_VERIFIED
 )
 
 data class CarGeneration(
@@ -38,7 +51,14 @@ object AlgerianCarCatalog {
         "Citroën",
         "Fiat",
         "Chevrolet",
-        "Suzuki"
+        "Suzuki",
+        "Nissan",
+        "Ford",
+        "Opel",
+        "Chery",
+        "Geely",
+        "Changan / DFSK / Haval",
+        "Mitsubishi / Mahindra"
     )
 
     val baseModels: List<AlgerianCarModel> = listOf(
@@ -234,5 +254,5 @@ object AlgerianCarCatalog {
         )
     )
 
-    val models: List<AlgerianCarModel> = baseModels + AlgerianCarCatalogExtra.additionalModels
+    val models: List<AlgerianCarModel> = baseModels + AlgerianCarCatalogExtra.additionalModels + AlgerianCarCatalogExtra2.additionalModels2
 }

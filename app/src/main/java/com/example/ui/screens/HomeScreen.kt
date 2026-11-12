@@ -8,6 +8,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,6 +53,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
@@ -391,12 +394,14 @@ fun HomeScreen(
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = Strings.statusInProgress(language),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Slate900
+                                color = Slate900,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = when (language) {
@@ -405,7 +410,9 @@ fun HomeScreen(
                                     AppLanguage.EN -> "Saved drafts"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Slate600
+                                color = Slate600,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -438,12 +445,14 @@ fun HomeScreen(
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = Strings.statusCompleted(language),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Slate900
+                                color = Slate900,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = when (language) {
@@ -452,7 +461,9 @@ fun HomeScreen(
                                     AppLanguage.EN -> "Ready reports"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Slate600
+                                color = Slate600,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -727,6 +738,7 @@ fun HomeScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun InspectionCardItem(
     inspection: InspectionEntity,
@@ -751,18 +763,26 @@ fun InspectionCardItem(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                ) {
                     Text(
                         text = "${inspection.carBrand} ${inspection.carModel}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Slate900
+                        color = Slate900,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     val plateSuffix = if (inspection.plateNumber.isNotBlank()) " • ${inspection.plateNumber}" else ""
                     Text(
                         text = "${inspection.carGeneration.ifBlank { inspection.carYear.toString() }} • ${inspection.engineDescription.ifBlank { inspection.fuelType }}$plateSuffix",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Slate600
+                        color = Slate600,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 StatusBadge(status = inspection.status, language = language)
@@ -775,7 +795,13 @@ fun InspectionCardItem(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = Slate100
@@ -785,6 +811,8 @@ fun InspectionCardItem(
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = Slate700,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
@@ -796,6 +824,8 @@ fun InspectionCardItem(
                             text = inspection.gearboxType,
                             style = MaterialTheme.typography.labelSmall,
                             color = Slate700,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
@@ -808,6 +838,8 @@ fun InspectionCardItem(
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = Emerald800,
+                            maxLines = 1,
+                            softWrap = false,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
@@ -816,7 +848,9 @@ fun InspectionCardItem(
                 Text(
                     text = dateStr,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Slate400
+                    color = Slate400,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
         }

@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -478,7 +480,9 @@ private fun MilBulbTamperCard(
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = Slate900,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
                 )
 
                 val badgeBg = when (milCommandedOn) {
@@ -510,6 +514,8 @@ private fun MilBulbTamperCard(
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = badgeFg,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
@@ -601,6 +607,7 @@ private fun MilBulbTamperCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DtcFaultListCard(
     dtcList: List<DtcInfo>,
@@ -666,42 +673,66 @@ private fun DtcFaultListCard(
                         border = BorderStroke(1.dp, Slate200)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            Row(
+                            FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (dtc.severity == ItemSeverity.CRITICAL) StatusErrorRed else StatusWarningAmber
-                                    ) {
-                                        Text(
-                                            text = dtc.code,
-                                            style = MaterialTheme.typography.labelLarge,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = Color.White,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (dtc.severity == ItemSeverity.CRITICAL) StatusErrorRed else StatusWarningAmber
+                                ) {
+                                    Text(
+                                        text = dtc.code,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Slate200.copy(alpha = 0.7f)
+                                ) {
                                     Text(
                                         text = dtc.dtcType.getLabel(language),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = Slate600
+                                        color = Slate800,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                                     )
                                 }
 
-                                if (dtc.maxCostDzd > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = StatusWarningAmberContainer
+                                ) {
                                     Text(
-                                        text = "${dtc.minCostDzd / 1000}k - ${dtc.maxCostDzd / 1000}k DZD",
+                                        text = dtc.verificationStatus.getLabel(language),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = StatusErrorRed
+                                        color = StatusWarningAmberOnContainer,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
                                     )
                                 }
+                            }
+
+                            if (dtc.maxCostDzd > 0 && dtc.verificationStatus == com.example.data.model.VerificationStatus.VERIFIED_BY_MECHANIC) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "${dtc.minCostDzd / 1000}k - ${dtc.maxCostDzd / 1000}k DZD",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StatusErrorRed
+                                )
                             }
 
                             Spacer(modifier = Modifier.height(6.dp))

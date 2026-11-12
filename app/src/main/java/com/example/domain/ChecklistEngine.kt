@@ -1,48 +1,117 @@
 package com.example.domain
 
+import com.example.data.model.AlgerianCarCatalog
 import com.example.data.model.ChecklistItemDefinition
 import com.example.data.model.ChecklistLibrary
 import com.example.data.model.ChecklistLibraryPart2
 import com.example.data.model.ChecklistLibraryPart3
+import com.example.data.model.ChecklistLibraryPart4
+import com.example.data.model.ChecklistLibraryPart5
+import com.example.data.model.ChecklistLibraryPart6
+import com.example.data.model.ChecklistLibraryPart7
 import com.example.data.model.ItemSeverity
 
 object ChecklistEngine {
 
+    private const val REFERENCE_CURRENT_YEAR = 2026
+
     val fullLibrary: List<ChecklistItemDefinition> =
-        (ChecklistLibrary.allItems + ChecklistLibraryPart2.extraItems + ChecklistLibraryPart3.phase8Items)
+        (
+            ChecklistLibrary.allItems +
+                ChecklistLibraryPart2.extraItems +
+                ChecklistLibraryPart3.phase8Items +
+                ChecklistLibraryPart4.section1To4Items +
+                ChecklistLibraryPart5.section5To7Items +
+                ChecklistLibraryPart6.section8To9Items +
+                ChecklistLibraryPart7.extraSectionItems
+            )
+            .distinctBy { it.id }
             .sortedBy { it.section.order }
 
     /**
+     * Infers whether an engine description or car configuration is turbocharged when not explicitly specified.
+     */
+    fun inferHasTurbo(fuelType: String, engineDescription: String): Boolean {
+        val descUpper = engineDescription.uppercase()
+        val fuelUpper = fuelType.uppercase()
+        if (descUpper.contains("SDI") || descUpper.contains("1.9 D") || descUpper.contains("ATMO")) {
+            return false
+        }
+        val turboKeywords = listOf(
+            "TURBO", "TSI", "TFSI", "TDI", "HDI", "DCI", "TCE", "CRDI", "TGDI", "T-GDI",
+            "TDCI", "CDTI", "JTD", "MULTIJET", "D-4D", "D4D", "DID", "THP", "ECOBOOST", "BLUEHDI"
+        )
+        if (turboKeywords.any { descUpper.contains(it) }) return true
+        // Modern diesels are almost universally turbocharged unless marked SDI / 1.9D
+        if (fuelUpper.contains("DIESEL") && descUpper.isBlank()) return true
+        return false
+    }
+
+    /**
      * Filters and orders checklist items based on the exact car configuration:
-     * - Fuel type (ESSENCE, DIESEL, GPL, HYBRIDE)
-     * - Gearbox type (MANUELLE, AUTOMATIQUE, AUTOMATIQUE (DSG), etc.)
-     * - Brand & Model (for known model weak points like Peugeot 1.2 PureTech or Renault 1.5 dCi)
-     * - Quick Check (~10 min) vs Full Inspection (~40 min)
+     * - Exact Model & Generation for model weak points (no brand-wide shortcuts)
+     * - Engine, Fuel type (ESSENCE, DIESEL, GPL, HYBRIDE) & Gearbox type (MANUELLE, AUTOMATIQUE, DSG, etc.)
+     * - Year / Age (minYear, maxYear, minAgeYears)
+     * - Odometer Mileage band (minMileageKm, maxMileageKm)
+     * - Turbocharger (requiresTurbo)
+     * - Four-Wheel Drive / AWD (requiresFourWheelDrive)
+     * - Body type (CITADINE, BERLINE, SUV, UTILITAIRE, PICKUP)
+     * - Quick Check vs Full Inspection
+     * - "Other car" path: cars missing from the catalogue still get a fully adapted checklist
+     *   from fuel, gearbox, year, body type, mileage, turbo, and 4x4.
      */
     fun buildChecklistForCar(
         brand: String,
         model: String,
         fuelType: String,
         gearboxType: String,
-        isQuickMode: Boolean
+        isQuickMode: Boolean,
+        generation: String = "",
+        engineDescription: String = "",
+        carYear: Int = 2018,
+        odometerKm: Int = 0,
+        hasTurbo: Boolean? = null,
+        isFourWheelDrive: Boolean? = null,
+        bodyType: String = ""
     ): List<ChecklistItemDefinition> {
-        val normalizedFuel = fuelType.uppercase()
-        val normalizedGearbox = gearboxType.uppercase()
-        val normalizedId = "${brand.lowercase().trim()}_${model.lowercase().trim().replace(" ", "")}"
-        val catalogModelId = com.example.data.model.AlgerianCarCatalog.models.firstOrNull {
-            it.brand.equals(brand.trim(), ignoreCase = true) &&
-                (it.model.equals(model.trim(), ignoreCase = true) ||
-                    it.model.lowercase().contains(model.lowercase().trim()) ||
-                    model.lowercase().trim().contains(it.model.lowercase()))
-        }?.id ?: normalizedId
+        val normalizedFuel = fuelType.uppercase().trim()
+        val normalizedGearbox = gearboxType.uppercase().trim()
+        val cleanBrand = brand.trim()
+        val cleanModel = model.trim()
+        val cleanGeneration = generation.trim()
+        val cleanEngine = engineDescription.trim()
+
+        // Match exact catalogue model by Brand + Model (+ Generation if provided)
+        val matchingModels = AlgerianCarCatalog.models.filter {
+            it.brand.equals(cleanBrand, ignoreCase = true) &&
+                it.model.equals(cleanModel, ignoreCase = true)
+        }
+        val exactCatalogModel = when {
+            matchingModels.isEmpty() -> null
+            cleanGeneration.isNotBlank() -> matchingModels.firstOrNull { carModel ->
+                carModel.generations.any { gen -> gen.name.equals(cleanGeneration, ignoreCase = true) }
+            } ?: matchingModels.first()
+            else -> matchingModels.first()
+        }
+
+        val effectiveGeneration = cleanGeneration.ifBlank {
+            exactCatalogModel?.generations?.firstOrNull()?.name.orEmpty()
+        }
+        val effectiveBodyType = bodyType.trim().uppercase().ifBlank {
+            exactCatalogModel?.defaultBodyType?.uppercase() ?: "BERLINE"
+        }
+        val effectiveHasTurbo = hasTurbo ?: inferHasTurbo(normalizedFuel, cleanEngine)
+        val effectiveIs4x4 = isFourWheelDrive ?: false
+        val effectiveYear = if (carYear in 1980..REFERENCE_CURRENT_YEAR) carYear else 2018
+        val carAgeYears = (REFERENCE_CURRENT_YEAR - effectiveYear).coerceAtLeast(0)
 
         return fullLibrary.filter { item ->
-            // 1. Check Quick Mode filter
+            // 1. Quick Mode filter
             if (isQuickMode && !item.includedInQuickCheck) {
                 return@filter false
             }
 
-            // 2. Check Fuel condition
+            // 2. Fuel condition
             if (item.requiredFuels.isNotEmpty()) {
                 val fuelMatch = item.requiredFuels.any { req ->
                     normalizedFuel.contains(req.uppercase())
@@ -50,10 +119,14 @@ object ChecklistEngine {
                 if (!fuelMatch) return@filter false
             }
 
-            // 3. Check Gearbox condition
+            // 3. Gearbox condition
             if (item.requiredGearboxes.isNotEmpty()) {
                 val isManualCar = normalizedGearbox.contains("MANUEL") || normalizedGearbox.contains("MANUAL")
-                val isAutoCar = normalizedGearbox.contains("AUTO") || normalizedGearbox.contains("DSG") || normalizedGearbox.contains("EDC")
+                val isAutoCar = normalizedGearbox.contains("AUTO") ||
+                    normalizedGearbox.contains("DSG") ||
+                    normalizedGearbox.contains("EDC") ||
+                    normalizedGearbox.contains("CVT") ||
+                    normalizedGearbox.contains("BVA")
 
                 val gearMatch = item.requiredGearboxes.any { req ->
                     val reqUpper = req.uppercase()
@@ -66,15 +139,86 @@ object ChecklistEngine {
                 if (!gearMatch) return@filter false
             }
 
-            // 4. Check Model-Specific Known Weak Point condition
+            // 4. Exact Model + Generation + Engine condition for Model Weak Points
+            // (No brand-wide Peugeot / Renault / Dacia shortcuts!)
             if (item.specificModelIds.isNotEmpty()) {
-                val modelMatch = item.specificModelIds.any { specId ->
-                    catalogModelId.equals(specId, ignoreCase = true) ||
-                        normalizedId.contains(specId) ||
-                        (brand.equals("Peugeot", ignoreCase = true) && specId.startsWith("peugeot") && !normalizedFuel.contains("DIESEL")) ||
-                        ((brand.equals("Renault", ignoreCase = true) || brand.equals("Dacia", ignoreCase = true)) && specId.startsWith("renault") && normalizedFuel.contains("DIESEL"))
+                val catalogId = exactCatalogModel?.id ?: return@filter false
+                val idMatches = item.specificModelIds.any { specId ->
+                    specId.equals(catalogId, ignoreCase = true)
                 }
-                if (!modelMatch) return@filter false
+                if (!idMatches) return@filter false
+
+                if (item.requiredGenerations.isNotEmpty()) {
+                    if (effectiveGeneration.isBlank()) return@filter false
+                    val genMatches = item.requiredGenerations.any { reqGen ->
+                        val cleanReq = reqGen.trim()
+                        effectiveGeneration.equals(cleanReq, ignoreCase = true) ||
+                            effectiveGeneration.contains(cleanReq, ignoreCase = true) ||
+                            cleanReq.contains(effectiveGeneration, ignoreCase = true)
+                    }
+                    if (!genMatches) return@filter false
+                }
+            }
+
+            // 5. Specific Engine condition (when item restricts to specific engine strings like "1.2 PureTech")
+            if (item.requiredEngines.isNotEmpty()) {
+                // Only match if the selected engine matches one of requiredEngines (or if no engine was specified on a model weak point, check if the model's only matching fuel engines include it)
+                if (cleanEngine.isNotBlank()) {
+                    val engineMatches = item.requiredEngines.any { reqEng ->
+                        cleanEngine.contains(reqEng, ignoreCase = true) ||
+                            reqEng.contains(cleanEngine, ignoreCase = true)
+                    }
+                    if (!engineMatches) return@filter false
+                } else if (exactCatalogModel != null) {
+                    val modelHasRequiredEngine = exactCatalogModel.commonEngines.any { catEng ->
+                        item.requiredEngines.any { reqEng -> catEng.contains(reqEng, ignoreCase = true) }
+                    }
+                    if (!modelHasRequiredEngine) return@filter false
+                } else {
+                    return@filter false
+                }
+            }
+
+            // 6. Year & Age conditions
+            if (item.minYear != null && effectiveYear < item.minYear) {
+                return@filter false
+            }
+            if (item.maxYear != null && effectiveYear > item.maxYear) {
+                return@filter false
+            }
+            if (item.minAgeYears != null && carAgeYears < item.minAgeYears) {
+                return@filter false
+            }
+
+            // 7. Odometer Mileage Band conditions
+            if (item.minMileageKm != null) {
+                if (odometerKm <= 0) {
+                    // When mileage was not entered (> 0), include high-mileage checks only if the car is older (>= 7 years)
+                    if (carAgeYears < 7) return@filter false
+                } else if (odometerKm < item.minMileageKm) {
+                    return@filter false
+                }
+            }
+            if (item.maxMileageKm != null && odometerKm > 0 && odometerKm > item.maxMileageKm) {
+                return@filter false
+            }
+
+            // 8. Turbocharger condition
+            if (item.requiresTurbo != null && item.requiresTurbo != effectiveHasTurbo) {
+                return@filter false
+            }
+
+            // 9. Four-Wheel Drive (4x4 / AWD) condition
+            if (item.requiresFourWheelDrive != null && item.requiresFourWheelDrive != effectiveIs4x4) {
+                return@filter false
+            }
+
+            // 10. Body Type condition
+            if (item.requiredBodyTypes.isNotEmpty()) {
+                val bodyMatch = item.requiredBodyTypes.any { reqBody ->
+                    reqBody.equals(effectiveBodyType, ignoreCase = true)
+                }
+                if (!bodyMatch) return@filter false
             }
 
             true

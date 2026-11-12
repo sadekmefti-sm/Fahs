@@ -123,15 +123,68 @@ enum class ItemSeverity(
     }
 }
 
+enum class VerificationStatus(
+    val labelFr: String,
+    val labelAr: String,
+    val labelEn: String
+) {
+    TO_BE_VERIFIED(
+        labelFr = "À vérifier par un mécanicien",
+        labelAr = "قيد المراجعة من طرف ميكانيكي",
+        labelEn = "To be verified"
+    ),
+    VERIFIED_BY_MECHANIC(
+        labelFr = "Vérifié par un mécanicien",
+        labelAr = "تمت مراجعته من طرف ميكانيكي",
+        labelEn = "Verified by mechanic"
+    );
+
+    fun getLabel(lang: AppLanguage): String = when (lang) {
+        AppLanguage.AR -> labelAr
+        AppLanguage.FR -> labelFr
+        AppLanguage.EN -> labelEn
+    }
+}
+
+enum class CarBodyType(
+    val code: String,
+    val labelFr: String,
+    val labelAr: String,
+    val labelEn: String
+) {
+    CITADINE("CITADINE", "Citadine / Compacte", "سيارة مدينة / هاتشباك (Citadine)", "City Car / Hatchback"),
+    BERLINE("BERLINE", "Berline / Tricorps", "سيدان / صالون (Berline)", "Sedan / Saloon"),
+    SUV("SUV", "SUV / Crossover / 4x4", "سيارة مرتفعة / SUV / 4x4", "SUV / Crossover / 4x4"),
+    UTILITAIRE("UTILITAIRE", "Utilitaire / Fourgon / Ludospace", "نفعية / فورغون (Kangoo, Partner...)", "Van / Commercial / MPV"),
+    PICKUP("PICKUP", "Pick-up / Châssis échelle", "بيك أب / شاسيه سلمي (Hilux...)", "Pickup / Ladder Frame");
+
+    fun getLabel(lang: AppLanguage): String = when (lang) {
+        AppLanguage.AR -> labelAr
+        AppLanguage.FR -> labelFr
+        AppLanguage.EN -> labelEn
+    }
+}
+
 data class ChecklistItemDefinition(
     val id: String,
     val section: ChecklistSection,
     val severity: ItemSeverity,
     val includedInQuickCheck: Boolean,
-    val requiredFuels: Set<String> = emptySet(), // empty = all fuels; or "DIESEL", "GPL", "ESSENCE"
-    val requiredGearboxes: Set<String> = emptySet(), // empty = all; or "MANUELLE", "AUTOMATIQUE"
-    val specificModelIds: Set<String> = emptySet(), // empty = all models; or e.g. "peugeot_208"
+    val requiredFuels: Set<String> = emptySet(), // empty = all fuels; or "DIESEL", "GPL", "ESSENCE", "HYBRIDE"
+    val requiredGearboxes: Set<String> = emptySet(), // empty = all; or "MANUELLE", "AUTOMATIQUE", "DSG", "EDC"
+    val specificModelIds: Set<String> = emptySet(), // empty = all models; exact model id e.g. "peugeot_208"
+    val requiredGenerations: Set<String> = emptySet(), // empty = all generations of that model; or generation substring
+    val requiredEngines: Set<String> = emptySet(), // empty = all engines; or engine substring e.g. "PureTech", "1.5 dCi"
+    val minYear: Int? = null,
+    val maxYear: Int? = null,
+    val minAgeYears: Int? = null,
+    val minMileageKm: Int? = null,
+    val maxMileageKm: Int? = null,
+    val requiresTurbo: Boolean? = null, // true = turbo only, false = naturally aspirated only, null = all
+    val requiresFourWheelDrive: Boolean? = null, // true = 4x4/AWD only, false = 2WD only, null = all
+    val requiredBodyTypes: Set<String> = emptySet(), // empty = all; or "CITADINE", "BERLINE", "SUV", "UTILITAIRE", "PICKUP"
     val isKnownModelWeakPoint: Boolean = false,
+    val verificationStatus: VerificationStatus = VerificationStatus.TO_BE_VERIFIED,
     val questionFr: String,
     val questionAr: String,
     val questionEn: String,
