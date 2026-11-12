@@ -487,6 +487,10 @@ fun MainScreen(
                         language = currentLanguage,
                         activeInspection = activeInspection,
                         initialScanResult = lastObdScanResult,
+                        shopSettings = shopSettings,
+                        onOpenDongleBuyingGuide = {
+                            onboardingDialogSection = "DONGLE_GUIDE"
+                        },
                         isDeveloperModeEnabled = isDeveloperModeEnabled,
                         onSaveScanToInspection = { scanResult, milBulbLit, ecuVinComparison ->
                             viewModel.saveObdScanToActiveInspection(

@@ -95,6 +95,8 @@ fun ObdGuideScreen(
     language: AppLanguage,
     activeInspection: InspectionEntity? = null,
     initialScanResult: ObdScanResult? = null,
+    shopSettings: com.example.data.repository.ShopSettings = com.example.data.repository.ShopSettings(),
+    onOpenDongleBuyingGuide: () -> Unit = {},
     isDeveloperModeEnabled: Boolean = false,
     onSaveScanToInspection: (ObdScanResult, Boolean, EcuVinComparisonChoice) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
@@ -570,6 +572,26 @@ fun ObdGuideScreen(
                                                     color = Color.White
                                                 )
                                             }
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            OutlinedButton(
+                                                onClick = onOpenDongleBuyingGuide,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .testTag("obd_open_buying_guide_btn"),
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = BorderStroke(1.dp, Emerald700)
+                                            ) {
+                                                Text(
+                                                    text = when (language) {
+                                                        AppLanguage.AR -> "ليس لديك فيشة ELM327؟ دليل الشراء والطلب (58 ولاية)"
+                                                        AppLanguage.FR -> "Pas de boîtier ELM327 ? Guide d'achat & commande (58 wilayas)"
+                                                        AppLanguage.EN -> "No ELM327 dongle? Buying Guide & Order (58 Wilayas)"
+                                                    },
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Emerald800
+                                                )
+                                            }
                                         }
                                     }
                                 } else {
@@ -911,6 +933,14 @@ fun ObdGuideScreen(
                             )
                         }
                     }
+                }
+
+                // ELM327 Buying Advice & Configurable 58-Wilaya Order Calculator
+                item {
+                    com.example.ui.components.DongleBuyingGuideContent(
+                        language = language,
+                        shopSettings = shopSettings
+                    )
                 }
             }
         }

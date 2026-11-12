@@ -110,6 +110,9 @@ class ExampleRobolectricTest {
     composeTestRule.onNodeWithTag("onboarding_release_dialog").assertExists()
     composeTestRule.onNodeWithTag("onboarding_tab_dongle").performClick()
     composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("dongle_shop_order_card").assertExists()
+    composeTestRule.onNodeWithTag("delivery_mode_home").performClick()
+    composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("onboarding_tab_privacy").performClick()
     composeTestRule.waitForIdle()
     composeTestRule.onNodeWithTag("finish_onboarding_btn").performClick()
@@ -117,5 +120,44 @@ class ExampleRobolectricTest {
     composeTestRule.onNodeWithTag("start_inspection_button").assertExists()
     composeTestRule.onNodeWithTag("start_inspection_button").performClick()
     composeTestRule.waitForIdle()
+  }
+
+  @Test
+  fun `verify phase 6 shop settings bundled json and 58 wilaya order calculator`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    // 1. Default Kotlin constructor has no hardcoded phone/email/price
+    val blankSettings = com.example.data.repository.ShopSettings()
+    assertEquals("", blankSettings.whatsappNumber)
+    assertEquals("", blankSettings.contactEmail)
+    assertEquals(0, blankSettings.donglePriceDzd)
+
+    // 2. Bundled JSON loads all 58 wilayas and configured shop values
+    val repo = com.example.data.repository.ShopSettingsRepository(context)
+    val bundled = repo.loadBundledDefault()
+    assertTrue(bundled.isShopConfiguredAndEnabled())
+    assertEquals("+971524830059", bundled.whatsappNumber)
+    assertEquals("sadekmefti@gmail.com", bundled.contactEmail)
+    assertEquals(2500, bundled.donglePriceDzd)
+    assertTrue(bundled.inStock)
+    assertEquals(58, bundled.deliveryFees.size)
+
+    // 3. Verify Algiers (16) and Oran (31) delivery calculations
+    val algiers = bundled.deliveryFees.first { it.wilayaCode == "16" }
+    assertEquals(2500 + algiers.stopDeskFeeDzd, bundled.calculateOrderTotalDzd(algiers, isHomeDelivery = false, quantity = 1))
+    assertEquals(2500 * 2 + algiers.homeFeeDzd, bundled.calculateOrderTotalDzd(algiers, isHomeDelivery = true, quantity = 2))
+
+    val msgFr = bundled.buildOrderMessage(
+      language = AppLanguage.FR,
+      wilaya = algiers,
+      isHomeDelivery = true,
+      quantity = 1,
+      customerName = "Karim",
+      customerPhone = "0550123456",
+      addressNote = "Bab Ezzouar"
+    )
+    assertTrue(msgFr.contains("16 - Alger"))
+    assertTrue(msgFr.contains("Livraison à domicile"))
+    assertTrue(msgFr.contains("Karim"))
+    assertTrue(bundled.buildWhatsAppUri(msgFr).startsWith("https://wa.me/971524830059?text="))
   }
 }

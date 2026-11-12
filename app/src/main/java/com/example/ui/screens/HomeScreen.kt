@@ -717,14 +717,23 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = when (language) {
-                                AppLanguage.AR -> "النسخة V1.5 الموصى بها، السعر (${shopSettings.formattedDonglePrice()})، وحماية بياناتك 100%"
-                                AppLanguage.FR -> "Version V1.5 recommandée, prix (${shopSettings.formattedDonglePrice()}) & données 100% privées"
-                                AppLanguage.EN -> "Recommended V1.5 adapter, price (${shopSettings.formattedDonglePrice()}) & 100% private data"
+                            text = if (shopSettings.isShopConfiguredAndEnabled()) {
+                                when (language) {
+                                    AppLanguage.AR -> "النسخة V1.5 الموصى بها، السعر (${shopSettings.formattedDonglePrice()})، وحماية بياناتك 100%"
+                                    AppLanguage.FR -> "Version V1.5 recommandée, prix (${shopSettings.formattedDonglePrice()}) & données 100% privées"
+                                    AppLanguage.EN -> "Recommended V1.5 adapter, price (${shopSettings.formattedDonglePrice()}) & 100% private data"
+                                }
+                            } else {
+                                when (language) {
+                                    AppLanguage.AR -> "النسخة V1.5 الموصى بها (PIC18F25K80) وحماية بياناتك 100%"
+                                    AppLanguage.FR -> "Version V1.5 recommandée (PIC18F25K80) & données 100% privées"
+                                    AppLanguage.EN -> "Recommended V1.5 adapter (PIC18F25K80) & 100% private data"
+                                }
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = Slate600,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     Icon(

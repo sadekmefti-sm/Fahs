@@ -1,7 +1,9 @@
 package com.example.data.repository
 
 import android.content.Context
+import android.net.Uri
 import com.example.R
+import com.example.core.i18n.AppLanguage
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
@@ -23,18 +25,120 @@ data class WilayaDeliveryFee(
     val zone: String,
     val homeFeeDzd: Int,
     val stopDeskFeeDzd: Int
-)
+) {
+    fun localizedName(language: AppLanguage): String = when (language) {
+        AppLanguage.AR -> "$wilayaCode - $nameAr"
+        AppLanguage.FR -> "$wilayaCode - $nameFr"
+        AppLanguage.EN -> "$wilayaCode - $nameEn"
+    }
+}
 
+/**
+ * Public, read-only shop configuration loaded from Firestore `/shop_settings/config`
+ * with an offline default copy bundled in `assets/data/shop_settings.json`.
+ * No phone numbers, emails, or prices are hardcoded in Kotlin code.
+ */
 data class ShopSettings(
-    val whatsappNumber: String = "+971524830059",
-    val contactEmail: String = "sadekmefti@gmail.com",
-    val donglePriceDzd: Int = 2500,
-    val inStock: Boolean = true,
+    val shopEnabled: Boolean = true,
+    val whatsappNumber: String = "",
+    val contactEmail: String = "",
+    val donglePriceDzd: Int = 0,
+    val inStock: Boolean = false,
     val deliveryFees: List<WilayaDeliveryFee> = emptyList()
 ) {
+    fun isShopConfiguredAndEnabled(): Boolean =
+        shopEnabled && whatsappNumber.isNotBlank() && donglePriceDzd > 0
+
     fun formattedDonglePrice(): String {
+        if (donglePriceDzd <= 0) return "—"
         val formatted = NumberFormat.getNumberInstance(Locale.US).format(donglePriceDzd)
         return "$formatted DZD"
+    }
+
+    fun formatDzd(amountDzd: Int): String {
+        val formatted = NumberFormat.getNumberInstance(Locale.US).format(amountDzd.coerceAtLeast(0))
+        return "$formatted DZD"
+    }
+
+    fun calculateOrderTotalDzd(
+        wilaya: WilayaDeliveryFee?,
+        isHomeDelivery: Boolean,
+        quantity: Int
+    ): Int {
+        val safeQty = quantity.coerceIn(1, 20)
+        val subtotal = donglePriceDzd.coerceAtLeast(0) * safeQty
+        val delivery = if (wilaya != null) {
+            if (isHomeDelivery) wilaya.homeFeeDzd else wilaya.stopDeskFeeDzd
+        } else {
+            0
+        }
+        return subtotal + delivery
+    }
+
+    fun buildOrderMessage(
+        language: AppLanguage,
+        wilaya: WilayaDeliveryFee,
+        isHomeDelivery: Boolean,
+        quantity: Int,
+        customerName: String = "",
+        customerPhone: String = "",
+        addressNote: String = ""
+    ): String {
+        val safeQty = quantity.coerceIn(1, 20)
+        val unitPrice = donglePriceDzd.coerceAtLeast(0)
+        val subtotal = unitPrice * safeQty
+        val deliveryFee = if (isHomeDelivery) wilaya.homeFeeDzd else wilaya.stopDeskFeeDzd
+        val total = subtotal + deliveryFee
+        val cleanName = customerName.trim()
+        val cleanPhone = customerPhone.trim()
+        val cleanNote = addressNote.trim()
+
+        return when (language) {
+            AppLanguage.AR -> buildString {
+                appendLine("السلام عليكم، أود طلب فيشة الفحص ELM327 Bluetooth V1.5 من تطبيق فحص (Fahs):")
+                appendLine("• المنتج: ELM327 Bluetooth Classic V1.5 (PIC18F25K80)")
+                appendLine("• الكمية: $safeQty (${formatDzd(unitPrice)} للوحدة)")
+                appendLine("• الولاية: ${wilaya.wilayaCode} - ${wilaya.nameAr} (${wilaya.nameFr})")
+                val methodAr = if (isHomeDelivery) "توصيل إلى المنزل (À domicile)" else "مكتب التوصيل (Stop Desk)"
+                appendLine("• طريقة التوصيل: $methodAr (${formatDzd(deliveryFee)})")
+                appendLine("• المبلغ الإجمالي عند الاستلام: ${formatDzd(total)}")
+                if (cleanName.isNotEmpty()) appendLine("• الاسم: $cleanName")
+                if (cleanPhone.isNotEmpty()) appendLine("• رقم الهاتف: $cleanPhone")
+                if (cleanNote.isNotEmpty()) appendLine("• البلدية / العنوان: $cleanNote")
+            }.trim()
+
+            AppLanguage.FR -> buildString {
+                appendLine("Bonjour, je souhaite commander un boîtier ELM327 Bluetooth V1.5 depuis l'application Fahs :")
+                appendLine("• Produit : ELM327 Bluetooth Classic V1.5 (PIC18F25K80)")
+                appendLine("• Quantité : $safeQty (${formatDzd(unitPrice)} / unité)")
+                appendLine("• Wilaya : ${wilaya.wilayaCode} - ${wilaya.nameFr}")
+                val methodFr = if (isHomeDelivery) "Livraison à domicile" else "Bureau Stop Desk"
+                appendLine("• Mode de livraison : $methodFr (${formatDzd(deliveryFee)})")
+                appendLine("• Total à payer à la livraison : ${formatDzd(total)}")
+                if (cleanName.isNotEmpty()) appendLine("• Nom : $cleanName")
+                if (cleanPhone.isNotEmpty()) appendLine("• Téléphone : $cleanPhone")
+                if (cleanNote.isNotEmpty()) appendLine("• Commune / Adresse : $cleanNote")
+            }.trim()
+
+            AppLanguage.EN -> buildString {
+                appendLine("Hello, I would like to order an ELM327 Bluetooth V1.5 dongle from the Fahs app:")
+                appendLine("• Product: ELM327 Bluetooth Classic V1.5 (PIC18F25K80)")
+                appendLine("• Quantity: $safeQty (${formatDzd(unitPrice)} each)")
+                appendLine("• Wilaya: ${wilaya.wilayaCode} - ${wilaya.nameEn}")
+                val methodEn = if (isHomeDelivery) "Home Delivery" else "Stop Desk Office"
+                appendLine("• Delivery Method: $methodEn (${formatDzd(deliveryFee)})")
+                appendLine("• Total Cash on Delivery: ${formatDzd(total)}")
+                if (cleanName.isNotEmpty()) appendLine("• Name: $cleanName")
+                if (cleanPhone.isNotEmpty()) appendLine("• Phone: $cleanPhone")
+                if (cleanNote.isNotEmpty()) appendLine("• Commune / Address: $cleanNote")
+            }.trim()
+        }
+    }
+
+    fun buildWhatsAppUri(orderMessage: String): String {
+        val digitsOnly = whatsappNumber.filter { it.isDigit() }
+        val encodedText = Uri.encode(orderMessage)
+        return "https://wa.me/$digitsOnly?text=$encodedText"
     }
 }
 
@@ -78,7 +182,7 @@ class ShopSettingsRepository(private val context: Context) {
         if (!cachedJson.isNullOrBlank()) {
             try {
                 val parsed = parseShopSettingsJson(cachedJson)
-                if (parsed.deliveryFees.isNotEmpty()) {
+                if (parsed.deliveryFees.isNotEmpty() && parsed.whatsappNumber.isNotBlank()) {
                     return parsed
                 }
             } catch (_: Exception) {
@@ -97,11 +201,12 @@ class ShopSettingsRepository(private val context: Context) {
         }
     }
 
-    private fun parseShopSettingsJson(jsonString: String): ShopSettings {
+    internal fun parseShopSettingsJson(jsonString: String): ShopSettings {
         val root = JSONObject(jsonString)
-        val whatsappNumber = root.optString("whatsappNumber", "+971524830059").ifBlank { "+971524830059" }
-        val contactEmail = root.optString("contactEmail", "sadekmefti@gmail.com").ifBlank { "sadekmefti@gmail.com" }
-        val donglePriceDzd = root.optInt("donglePriceDzd", 2500).let { if (it > 0) it else 2500 }
+        val shopEnabled = if (root.has("shopEnabled")) root.optBoolean("shopEnabled", true) else true
+        val whatsappNumber = root.optString("whatsappNumber", "").trim()
+        val contactEmail = root.optString("contactEmail", "").trim()
+        val donglePriceDzd = root.optInt("donglePriceDzd", 0).coerceAtLeast(0)
         val inStock = if (root.has("inStock")) root.optBoolean("inStock", true) else true
 
         val feesList = mutableListOf<WilayaDeliveryFee>()
@@ -118,14 +223,15 @@ class ShopSettingsRepository(private val context: Context) {
                         nameAr = item.optString("nameAr", code),
                         nameEn = item.optString("nameEn", code),
                         zone = item.optString("zone", "NORTH"),
-                        homeFeeDzd = item.optInt("homeFeeDzd", 800),
-                        stopDeskFeeDzd = item.optInt("stopDeskFeeDzd", 450)
+                        homeFeeDzd = item.optInt("homeFeeDzd", 0).coerceAtLeast(0),
+                        stopDeskFeeDzd = item.optInt("stopDeskFeeDzd", 0).coerceAtLeast(0)
                     )
                 )
             }
         }
 
         return ShopSettings(
+            shopEnabled = shopEnabled,
             whatsappNumber = whatsappNumber,
             contactEmail = contactEmail,
             donglePriceDzd = donglePriceDzd,
@@ -134,8 +240,9 @@ class ShopSettingsRepository(private val context: Context) {
         )
     }
 
-    private fun encodeShopSettingsJson(settings: ShopSettings): String {
+    internal fun encodeShopSettingsJson(settings: ShopSettings): String {
         val root = JSONObject()
+        root.put("shopEnabled", settings.shopEnabled)
         root.put("whatsappNumber", settings.whatsappNumber)
         root.put("contactEmail", settings.contactEmail)
         root.put("donglePriceDzd", settings.donglePriceDzd)
@@ -172,6 +279,7 @@ class ShopSettingsRepository(private val context: Context) {
                 return@withContext current
             }
             val bundled = loadBundledDefault()
+            val shopEnabled = snapshot.getBoolean("shopEnabled") ?: bundled.shopEnabled
             val whatsappNumber = (snapshot.getString("whatsappNumber"))?.trim()?.takeIf { it.isNotEmpty() }
                 ?: bundled.whatsappNumber
             val contactEmail = (snapshot.getString("contactEmail"))?.trim()?.takeIf { it.isNotEmpty() }
@@ -193,8 +301,8 @@ class ShopSettingsRepository(private val context: Context) {
                         nameAr = (map["nameAr"] as? String) ?: bundledMatch?.nameAr ?: code,
                         nameEn = (map["nameEn"] as? String) ?: bundledMatch?.nameEn ?: code,
                         zone = (map["zone"] as? String) ?: bundledMatch?.zone ?: "NORTH",
-                        homeFeeDzd = (map["homeFeeDzd"] as? Number)?.toInt() ?: bundledMatch?.homeFeeDzd ?: 800,
-                        stopDeskFeeDzd = (map["stopDeskFeeDzd"] as? Number)?.toInt() ?: bundledMatch?.stopDeskFeeDzd ?: 450
+                        homeFeeDzd = (map["homeFeeDzd"] as? Number)?.toInt() ?: bundledMatch?.homeFeeDzd ?: 0,
+                        stopDeskFeeDzd = (map["stopDeskFeeDzd"] as? Number)?.toInt() ?: bundledMatch?.stopDeskFeeDzd ?: 0
                     )
                 }
             } else {
@@ -202,6 +310,7 @@ class ShopSettingsRepository(private val context: Context) {
             }
 
             val updated = ShopSettings(
+                shopEnabled = shopEnabled,
                 whatsappNumber = whatsappNumber,
                 contactEmail = contactEmail,
                 donglePriceDzd = donglePriceDzd,
