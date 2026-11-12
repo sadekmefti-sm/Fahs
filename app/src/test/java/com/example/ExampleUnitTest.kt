@@ -611,4 +611,151 @@ class ExampleUnitTest {
         assertTrue(block.getCheckEngineLightText(AppLanguage.EN).contains("CRITICAL: Check-Engine light did NOT light up at key-on"))
         assertTrue(block.getChassisComparisonText(AppLanguage.EN).contains("DIFFERENT from the carte grise"))
     }
+
+    @Test
+    fun `phase 7 odometer OCR extractor proposes valid mileage and ignores bare years`() {
+        val rawOcr = """
+            PEUGEOT
+            2019
+            148 350 km
+            TRIP 412.5
+            92400
+        """.trimIndent()
+        val candidates = com.example.domain.OnDeviceOcrHelper.extractOdometerCandidates(rawOcr)
+        assertTrue(candidates.isNotEmpty())
+        assertEquals(148350, candidates.first().mileageKm)
+        assertTrue(candidates.any { it.mileageKm == 92400 })
+        assertFalse("Bare 4-digit year 2019 without km suffix must not be proposed as mileage", candidates.any { it.mileageKm == 2019 })
+    }
+
+    @Test
+    fun `phase 7 tyre DOT parser calculates manufacture week year and age accurately`() {
+        val recentCandidates = com.example.domain.OnDeviceOcrHelper.extractTyreDotCandidates("DOT 4F8R 2423")
+        assertEquals(1, recentCandidates.size)
+        val recent = recentCandidates.first()
+        assertEquals("2423", recent.dotCode)
+        assertEquals(24, recent.week)
+        assertEquals(2023, recent.year)
+        assertFalse(recent.isFiveYearsOrOlder)
+
+        val oldManual = com.example.domain.OnDeviceOcrHelper.parseManualTyreDotCode("3518")
+        assertTrue(oldManual != null)
+        assertEquals(35, oldManual!!.week)
+        assertEquals(2018, oldManual.year)
+        assertTrue("2018 tyre must be flagged as >= 5 years old", oldManual.isFiveYearsOrOlder)
+    }
+
+    @Test
+    fun `phase 7 automatic test drive monitoring detects overheating unstable idle weak charging and fault codes`() {
+        val coolTemps = listOf(88, 92, 98, 105) // 105°C -> overheating (>= 103°C)
+        val idleRpms = listOf(760, 780, 990, 740) // spread = 250 RPM (> 180 RPM)
+        val voltages = listOf(13.8, 12.7, 13.4) // min = 12.7 V (< 13.1 V)
+        val dtcs = listOf("P0300", "P0420")
+
+        val summary = com.example.domain.ObdTestDriveMonitorService.buildSummaryFromSamples(
+            durationSeconds = 420,
+            samplesCount = 28,
+            coolantTemps = coolTemps,
+            idleRpms = idleRpms,
+            voltages = voltages,
+            dtcs = dtcs
+        )
+        assertTrue(summary.overheatingDetected)
+        assertEquals(105, summary.maxCoolantTempC)
+        assertTrue(summary.unstableIdleDetected)
+        assertEquals(250, summary.idleRpmSpread)
+        assertTrue(summary.weakChargingDetected)
+        assertEquals(12.7, summary.minVoltageV ?: 0.0, 0.01)
+        assertEquals(listOf("P0300", "P0420"), summary.faultCodesFoundDuringDrive)
+        assertTrue(summary.hasAnyProblem)
+    }
+
+    @Test
+    fun `phase 7 beta voice answer parser handles English and French and ignores Arabic`() {
+        assertEquals("GOOD", com.example.domain.OfflineVoiceAndTtsController.parseBetaVoiceAnswerCommand("Good condition", AppLanguage.EN))
+        assertEquals("PROBLEM", com.example.domain.OfflineVoiceAndTtsController.parseBetaVoiceAnswerCommand("There is a problem", AppLanguage.EN))
+        assertEquals("SKIPPED", com.example.domain.OfflineVoiceAndTtsController.parseBetaVoiceAnswerCommand("Skip this", AppLanguage.EN))
+
+        assertEquals("GOOD", com.example.domain.OfflineVoiceAndTtsController.parseBetaVoiceAnswerCommand("C'est bon", AppLanguage.FR))
+        assertEquals("PROBLEM", com.example.domain.OfflineVoiceAndTtsController.parseBetaVoiceAnswerCommand("Il y a un problème", AppLanguage.FR))
+        assertEquals("SKIPPED", com.example.domain.OfflineVoiceAndTtsController.parseBetaVoiceAnswerCommand("Passer", AppLanguage.FR))
+
+        assertNull("Arabic voice answers are hidden unless proven reliable", com.example.domain.OfflineVoiceAndTtsController.parseBetaVoiceAnswerCommand("جيد", AppLanguage.AR))
+    }
+
+    @Test
+    fun `phase 7 OBD scan builds checklist auto answers for real scan and skips simulated scan`() {
+        val realScan = com.example.domain.ObdDiagnosticEngine.generateSimulatedScan(
+            profile = com.example.domain.ObdSimulatorProfile.HEALTHY,
+            expectedVin = "VF1RJA00062100001"
+        ).copy(isSimulated = false)
+
+        val proposals = com.example.ui.viewmodel.FahsViewModel.buildAutoAnsweredChecklistItemsFromScan(
+            scanResult = realScan,
+            milBulbLitOnDashboard = true,
+            ecuVinComparison = com.example.domain.EcuVinComparisonChoice.SAME,
+            adaptiveItems = com.example.domain.ChecklistEngine.fullLibrary
+        )
+        assertTrue(proposals.isNotEmpty())
+        val map = proposals.associateBy { it.item.id }
+        assertEquals("GOOD", map["int_dashboard_warning_lights"]?.status)
+        assertEquals("GOOD", map["bonnet_battery_alternator"]?.status)
+        assertEquals("GOOD", map["after_temp_fan_operation"]?.status)
+        assertEquals("GOOD", map["start_idle_rpm_stability"]?.status)
+        assertEquals("GOOD", map["final_obd_pending_after_drive"]?.status)
+        assertEquals("GOOD", map["doc_vin_three_way_match"]?.status)
+        assertTrue(proposals.all { it.getReason(AppLanguage.EN).startsWith(com.example.ui.viewmodel.FahsViewModel.OBD_AUTO_ANSWER_TAG) })
+
+        val simulatedProposals = com.example.ui.viewmodel.FahsViewModel.buildAutoAnsweredChecklistItemsFromScan(
+            scanResult = realScan.copy(isSimulated = true),
+            milBulbLitOnDashboard = true,
+            ecuVinComparison = com.example.domain.EcuVinComparisonChoice.SAME,
+            adaptiveItems = com.example.domain.ChecklistEngine.fullLibrary
+        )
+        assertTrue("Simulated scan must never auto-answer checklist items", simulatedProposals.isEmpty())
+    }
+
+    @Test
+    fun `phase 7 plain language summary builds 3 to 4 template sentences in AR FR and EN`() {
+        val inspection = InspectionEntity(
+            id = 55L,
+            carBrand = "Renault",
+            carModel = "Clio 4",
+            carYear = 2018
+        )
+        val allTemplates = com.example.domain.ChecklistEngine.buildChecklistForCar(
+            brand = "Renault",
+            model = "Clio 4",
+            fuelType = "ESSENCE",
+            gearboxType = "MANUELLE",
+            isQuickMode = false
+        )
+        val answers = allTemplates.mapIndexed { idx, t ->
+            ChecklistAnswerEntity(
+                inspectionId = 55L,
+                itemId = t.id,
+                category = t.section.name,
+                questionFr = t.questionFr,
+                questionAr = t.questionAr,
+                questionEn = t.questionEn,
+                status = if (idx == 0) "PROBLEM" else "GOOD",
+                severity = t.severity.name,
+                estimatedCostDzd = 0,
+                note = "",
+                photoUri = null
+            )
+        }
+        val report = ReportEngine.buildReport(inspection, answers)
+        val summaryEn = report.getPlainLanguageSummary(AppLanguage.EN)
+        val summaryFr = report.getPlainLanguageSummary(AppLanguage.FR)
+        val summaryAr = report.getPlainLanguageSummary(AppLanguage.AR)
+
+        assertTrue(summaryEn.contains("the main strengths are in"))
+        assertTrue(summaryEn.contains("Ask a trusted mechanic to inspect"))
+        assertTrue(summaryFr.contains("les principaux points forts"))
+        assertTrue(summaryFr.contains("Demandez à un mécanicien"))
+        assertTrue(summaryAr.contains("أبرز نقاط القوة"))
+        assertTrue(summaryAr.contains("اطلب من الميكانيكي"))
+    }
 }
+

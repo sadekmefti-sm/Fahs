@@ -50,6 +50,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -128,6 +129,67 @@ fun CarSelectionScreen(
     // Custom "Other Car" states
     var customBrand by remember { mutableStateOf("") }
     var customModel by remember { mutableStateOf("") }
+
+    // Phase 7 (Item 3): Offline ML Kit Odometer OCR states (suggestion that user confirms + manual fallback)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val ocrScope = androidx.compose.runtime.rememberCoroutineScope()
+    var pendingOdoCameraFile by remember { mutableStateOf<java.io.File?>(null) }
+    var isRunningOdoOcr by remember { mutableStateOf(false) }
+    var odoOcrProposal by remember { mutableStateOf<com.example.domain.OdometerOcrProposal?>(null) }
+    var odoOcrStatusMsg by remember { mutableStateOf<String?>(null) }
+    var showOdoCameraPermExplanation by remember { mutableStateOf(false) }
+
+    fun processOdometerPhotoFile(file: java.io.File) {
+        isRunningOdoOcr = true
+        odoOcrStatusMsg = null
+        ocrScope.launch {
+            val proposal = com.example.domain.OnDeviceOcrHelper.recognizeOdometerFromFile(file)
+            isRunningOdoOcr = false
+            try { file.delete() } catch (_: Exception) {}
+            if (proposal != null) {
+                odoOcrProposal = proposal
+            } else {
+                odoOcrStatusMsg = when (language) {
+                    AppLanguage.AR -> "لم يتمكن القارئ المحلي من تمييز رقم الكيلومترات بوضوح. يرجى كتابته يدوياً في الحقل أعلاه."
+                    AppLanguage.FR -> "Lecture automatique impossible sur cette photo. Veuillez saisir le kilométrage manuellement ci-dessus."
+                    AppLanguage.EN -> "Could not clearly read a mileage number from this photo. Please type it manually above."
+                }
+            }
+        }
+    }
+
+    val odoCameraLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.TakePicture()
+    ) { success ->
+        val f = pendingOdoCameraFile
+        pendingOdoCameraFile = null
+        if (success && f != null) {
+            processOdometerPhotoFile(f)
+        } else {
+            try { f?.delete() } catch (_: Exception) {}
+        }
+    }
+
+    val odoCameraPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            val (tempFile, uri) = com.example.core.photo.InspectionPhotoHelper.createTempCameraUri(context, "odometer_ocr")
+            pendingOdoCameraFile = tempFile
+            odoCameraLauncher.launch(uri)
+        }
+    }
+
+    val odoGalleryLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            val savedPath = com.example.core.photo.InspectionPhotoHelper.copyUriToInternalStorage(context, uri, "odometer_ocr_pick")
+            if (savedPath != null) {
+                processOdometerPhotoFile(java.io.File(savedPath))
+            }
+        }
+    }
 
     val parsedOdometerKm = odometerInputText.filter { it.isDigit() }.toIntOrNull() ?: 0
     val parsedYear = yearInputText.filter { it.isDigit() }.toIntOrNull()?.takeIf { it in 1985..2026 } ?: selectedYear
@@ -762,6 +824,194 @@ fun CarSelectionScreen(
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true,
                                     shape = RoundedCornerShape(12.dp)
+                                )
+                            }
+
+                            // Phase 7 (Item 3): Mileage from a photo (Bundled ML Kit OCR with user confirmation & manual fallback)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.OutlinedButton(
+                                    onClick = {
+                                        val hasCam = androidx.core.content.ContextCompat.checkSelfPermission(
+                                            context,
+                                            android.Manifest.permission.CAMERA
+                                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                        if (hasCam) {
+                                            val (tempFile, uri) = com.example.core.photo.InspectionPhotoHelper.createTempCameraUri(context, "odometer_ocr")
+                                            pendingOdoCameraFile = tempFile
+                                            odoCameraLauncher.launch(uri)
+                                        } else {
+                                            showOdoCameraPermExplanation = true
+                                        }
+                                    },
+                                    enabled = !isRunningOdoOcr,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("scan_odometer_photo_btn"),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "📷 قراءة العداد من صورة (بدون إنترنت)"
+                                            AppLanguage.FR -> "📷 Lire compteur par photo (Hors-ligne)"
+                                            AppLanguage.EN -> "📷 Read Odometer from Photo (Offline)"
+                                        },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Emerald800
+                                    )
+                                }
+
+                                androidx.compose.material3.OutlinedButton(
+                                    onClick = {
+                                        odoGalleryLauncher.launch(
+                                            androidx.activity.result.PickVisualMediaRequest(
+                                                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                            )
+                                        )
+                                    },
+                                    enabled = !isRunningOdoOcr,
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "صورة من المعرض"
+                                            AppLanguage.FR -> "Galerie"
+                                            AppLanguage.EN -> "Gallery"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+
+                            if (showOdoCameraPermExplanation) {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Emerald50,
+                                    border = BorderStroke(1.dp, Emerald200)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Text(
+                                            text = when (language) {
+                                                AppLanguage.AR -> "نحتاج صلاحية الكاميرا لتصوير عداد الكيلومترات وقراءة الرقم محلياً على هاتفك دون إنترنت."
+                                                AppLanguage.FR -> "L'accès à la caméra sert uniquement à photographier le compteur pour lire le kilométrage sur le téléphone (hors-ligne)."
+                                                AppLanguage.EN -> "Camera access is used to photograph the odometer so on-device text recognition can propose the mileage offline."
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Emerald900
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Button(
+                                            onClick = {
+                                                showOdoCameraPermExplanation = false
+                                                odoCameraPermLauncher.launch(android.Manifest.permission.CAMERA)
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Emerald700)
+                                        ) {
+                                            Text(
+                                                text = when (language) {
+                                                    AppLanguage.AR -> "متابعة وفتح الكاميرا"
+                                                    AppLanguage.FR -> "Continuer & Ouvrir la caméra"
+                                                    AppLanguage.EN -> "Continue & Open Camera"
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (isRunningOdoOcr) {
+                                Text(
+                                    text = when (language) {
+                                        AppLanguage.AR -> "جاري قراءة أرقام العداد محلياً (Google ML Kit)..."
+                                        AppLanguage.FR -> "Reconnaissance du kilométrage en cours (ML Kit hors-ligne)..."
+                                        AppLanguage.EN -> "Reading odometer digits on-device (offline ML Kit)..."
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Emerald800
+                                )
+                            }
+
+                            val currentOdoProposal = odoOcrProposal
+                            if (currentOdoProposal != null) {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("odometer_ocr_confirmation_box"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Emerald50,
+                                    border = BorderStroke(1.5.dp, Emerald600)
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text(
+                                            text = when (language) {
+                                                AppLanguage.AR -> "الرقم المقترح من الصورة: ${currentOdoProposal.proposedKm} كم — هل تؤكد هذا الرقم؟"
+                                                AppLanguage.FR -> "Kilométrage lu sur la photo : ${currentOdoProposal.proposedKm} km — Confirmez-vous ?"
+                                                AppLanguage.EN -> "Proposed mileage from photo: ${currentOdoProposal.proposedKm} km — Confirm?"
+                                            },
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Emerald900
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        FlowRow(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            currentOdoProposal.allCandidatesKm.forEach { candidateKm ->
+                                                Button(
+                                                    onClick = {
+                                                        odometerInputText = candidateKm.toString()
+                                                        odoOcrProposal = null
+                                                    },
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Emerald700),
+                                                    modifier = Modifier.testTag("confirm_odometer_ocr_${candidateKm}_btn")
+                                                ) {
+                                                    Text(
+                                                        text = when (language) {
+                                                            AppLanguage.AR -> "تأكيد $candidateKm كم ✓"
+                                                            AppLanguage.FR -> "Confirmer $candidateKm km ✓"
+                                                            AppLanguage.EN -> "Confirm $candidateKm km ✓"
+                                                        },
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White
+                                                    )
+                                                }
+                                            }
+                                            androidx.compose.material3.OutlinedButton(
+                                                onClick = { odoOcrProposal = null },
+                                                shape = RoundedCornerShape(8.dp)
+                                            ) {
+                                                Text(
+                                                    text = when (language) {
+                                                        AppLanguage.AR -> "إلغاء / كتابة يدوية"
+                                                        AppLanguage.FR -> "Ignorer / Saisie manuelle"
+                                                        AppLanguage.EN -> "Dismiss / Type Manually"
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (odoOcrStatusMsg != null) {
+                                Text(
+                                    text = odoOcrStatusMsg!!,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Slate700
                                 )
                             }
 

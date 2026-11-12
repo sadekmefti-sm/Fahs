@@ -43,6 +43,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -99,6 +100,7 @@ fun ObdGuideScreen(
     onOpenDongleBuyingGuide: () -> Unit = {},
     isDeveloperModeEnabled: Boolean = false,
     onSaveScanToInspection: (ObdScanResult, Boolean, EcuVinComparisonChoice) -> Unit = { _, _, _ -> },
+    onConfirmTestDriveSummary: (com.example.domain.TestDriveMonitoringSummary) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -132,6 +134,94 @@ fun ObdGuideScreen(
     }
     var isScanningBt by remember { mutableStateOf(false) }
     var btStatusMessage by remember { mutableStateOf<String?>(null) }
+
+    // Phase 7 (Item 7): Remember the dongle after the first successful scan and reconnect automatically
+    var rememberedDongleAddress by remember {
+        mutableStateOf(com.example.core.i18n.LanguagePreferences.getLastSuccessfulDongleAddress(context))
+    }
+    var rememberedDongleName by remember {
+        mutableStateOf(com.example.core.i18n.LanguagePreferences.getLastSuccessfulDongleName(context))
+    }
+    var hasAttemptedAutoReconnect by remember { mutableStateOf(false) }
+
+    fun runBluetoothScanOnDevice(address: String, name: String) {
+        if (isScanningBt) return
+        isScanningBt = true
+        scope.launch {
+            btStatusMessage = when (language) {
+                AppLanguage.AR -> "جاري الاتصال عبر البلوتوث بـ $name..."
+                AppLanguage.FR -> "Connexion Bluetooth RFCOMM à $name..."
+                AppLanguage.EN -> "Connecting via Bluetooth RFCOMM to $name..."
+            }
+            val transport = BluetoothElm327Transport(
+                context = context,
+                deviceAddress = address,
+                transportName = name
+            )
+            val connected = transport.connect()
+            if (connected) {
+                // Remember this dongle after the first successful connection/scan
+                com.example.core.i18n.LanguagePreferences.saveLastSuccessfulDongle(context, address, name)
+                rememberedDongleAddress = address
+                rememberedDongleName = name
+
+                currentScanResult = ObdDiagnosticEngine.executeRealObdScan(
+                    transport = transport,
+                    expectedVin = expectedVin,
+                    language = language,
+                    onProgress = { step -> btStatusMessage = step }
+                )
+                transport.disconnect()
+                btStatusMessage = when (language) {
+                    AppLanguage.AR -> "اكتمل الفحص عبر البلوتوث بنجاح ✓ (تم تذكر الجهاز للاتصال التلقائي)"
+                    AppLanguage.FR -> "Scan Bluetooth terminé avec succès ✓ (Boîtier mémorisé)"
+                    AppLanguage.EN -> "Bluetooth scan completed ✓ (Dongle remembered for auto-reconnect)"
+                }
+            } else {
+                btStatusMessage = when (language) {
+                    AppLanguage.AR -> "تعذر الاتصال بـ $name. تأكد من وضع المفتاح في Contact وأن الجهاز مضاء."
+                    AppLanguage.FR -> "Impossible de joindre $name. Vérifiez que le contact est mis et le boîtier branché."
+                    AppLanguage.EN -> "Could not connect to $name. Ensure ignition is ON and the dongle is plugged in."
+                }
+            }
+            isScanningBt = false
+        }
+    }
+
+    // Auto-reconnect once when opening the screen if a remembered dongle is paired
+    androidx.compose.runtime.LaunchedEffect(hasBtPermission, pairedDevices, rememberedDongleAddress) {
+        val addr = rememberedDongleAddress
+        if (hasBtPermission && !hasAttemptedAutoReconnect && currentScanResult == null && !addr.isNullOrBlank()) {
+            val matchedDev = pairedDevices.firstOrNull { it.address.equals(addr, ignoreCase = true) }
+            if (matchedDev != null) {
+                hasAttemptedAutoReconnect = true
+                runBluetoothScanOnDevice(matchedDev.address, matchedDev.name)
+            }
+        }
+    }
+
+    // Phase 7 (Item 2): Automatic test-drive monitoring states
+    val isMonitoringDrive by com.example.domain.ObdTestDriveMonitorService.isMonitoring.collectAsState()
+    val monitorStatusMsg by com.example.domain.ObdTestDriveMonitorService.statusMessage.collectAsState()
+    val monitorSamplesCount by com.example.domain.ObdTestDriveMonitorService.samplesCount.collectAsState()
+    val completedDriveSummary by com.example.domain.ObdTestDriveMonitorService.completedSummary.collectAsState()
+    var showNotificationPermExplanation by remember { mutableStateOf(false) }
+
+    val notificationPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        val targetDev = pairedDevices.firstOrNull {
+            it.address.equals(rememberedDongleAddress, ignoreCase = true)
+        } ?: pairedDevices.firstOrNull { it.isLikelyObdAdapter } ?: pairedDevices.firstOrNull()
+        if (targetDev != null) {
+            com.example.domain.ObdTestDriveMonitorService.startMonitoring(
+                context = context,
+                deviceAddress = targetDev.address,
+                deviceName = targetDev.name,
+                language = language
+            )
+        }
+    }
 
     val btPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -595,16 +685,77 @@ fun ObdGuideScreen(
                                         }
                                     }
                                 } else {
+                                    // Phase 7 (Item 7): Show remembered dongle banner if saved
+                                    val savedAddr = rememberedDongleAddress
+                                    val savedName = rememberedDongleName ?: "OBDII"
+                                    if (!savedAddr.isNullOrBlank()) {
+                                        Surface(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(bottom = 8.dp)
+                                                .testTag("remembered_dongle_banner"),
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = Emerald50,
+                                            border = BorderStroke(1.5.dp, Emerald600)
+                                        ) {
+                                            Column(modifier = Modifier.padding(12.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = when (language) {
+                                                                AppLanguage.AR -> "الجهاز المحفوظ للاتصال التلقائي: $savedName"
+                                                                AppLanguage.FR -> "Boîtier mémorisé (reconnexion auto) : $savedName"
+                                                                AppLanguage.EN -> "Remembered Dongle (Auto-Reconnect): $savedName"
+                                                            },
+                                                            style = MaterialTheme.typography.labelLarge,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Emerald900
+                                                        )
+                                                        Text(
+                                                            text = savedAddr,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = Slate600
+                                                        )
+                                                    }
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            com.example.core.i18n.LanguagePreferences.clearLastSuccessfulDongle(context)
+                                                            rememberedDongleAddress = null
+                                                            rememberedDongleName = null
+                                                        },
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = when (language) {
+                                                                AppLanguage.AR -> "تغيير الجهاز"
+                                                                AppLanguage.FR -> "Changer"
+                                                                AppLanguage.EN -> "Change"
+                                                            },
+                                                            style = MaterialTheme.typography.labelSmall
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     pairedDevices.forEach { dev: PairedBluetoothDevice ->
+                                        val isRemembered = !rememberedDongleAddress.isNullOrBlank() &&
+                                            dev.address.equals(rememberedDongleAddress, ignoreCase = true)
                                         Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(vertical = 4.dp),
                                             shape = RoundedCornerShape(12.dp),
-                                            color = if (dev.isLikelyObdAdapter) Emerald50 else Slate50,
+                                            color = if (isRemembered || dev.isLikelyObdAdapter) Emerald50 else Slate50,
                                             border = BorderStroke(
-                                                1.dp,
-                                                if (dev.isLikelyObdAdapter) Emerald600 else Slate200
+                                                if (isRemembered) 2.dp else 1.dp,
+                                                if (isRemembered) Emerald700 else if (dev.isLikelyObdAdapter) Emerald600 else Slate200
                                             )
                                         ) {
                                             Row(
@@ -616,7 +767,7 @@ fun ObdGuideScreen(
                                             ) {
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Text(
-                                                        text = dev.name,
+                                                        text = dev.name + if (isRemembered) " ★" else "",
                                                         style = MaterialTheme.typography.titleSmall,
                                                         fontWeight = FontWeight.Bold,
                                                         color = Slate900
@@ -630,41 +781,7 @@ fun ObdGuideScreen(
 
                                                 Button(
                                                     onClick = {
-                                                        isScanningBt = true
-                                                        scope.launch {
-                                                            btStatusMessage = when (language) {
-                                                                AppLanguage.AR -> "جاري الاتصال عبر البلوتوث بـ ${dev.name}..."
-                                                                AppLanguage.FR -> "Connexion Bluetooth RFCOMM à ${dev.name}..."
-                                                                AppLanguage.EN -> "Connecting via Bluetooth RFCOMM to ${dev.name}..."
-                                                            }
-                                                            val transport = BluetoothElm327Transport(
-                                                                context = context,
-                                                                deviceAddress = dev.address,
-                                                                transportName = dev.name
-                                                            )
-                                                            val connected = transport.connect()
-                                                            if (connected) {
-                                                                currentScanResult = ObdDiagnosticEngine.executeRealObdScan(
-                                                                    transport = transport,
-                                                                    expectedVin = expectedVin,
-                                                                    language = language,
-                                                                    onProgress = { step -> btStatusMessage = step }
-                                                                )
-                                                                transport.disconnect()
-                                                                btStatusMessage = when (language) {
-                                                                    AppLanguage.AR -> "اكتمل الفحص عبر البلوتوث بنجاح ✓"
-                                                                    AppLanguage.FR -> "Scan Bluetooth terminé avec succès ✓"
-                                                                    AppLanguage.EN -> "Bluetooth scan completed ✓"
-                                                                }
-                                                            } else {
-                                                                btStatusMessage = when (language) {
-                                                                    AppLanguage.AR -> "تعذر الاتصال بـ ${dev.name}. تأكد من وضع المفتاح في Contact وأن الجهاز مضاء."
-                                                                    AppLanguage.FR -> "Impossible de joindre ${dev.name}. Vérifiez que le contact est mis et le boîtier branché."
-                                                                    AppLanguage.EN -> "Could not connect to ${dev.name}. Ensure ignition is ON and the dongle is plugged in."
-                                                                }
-                                                            }
-                                                            isScanningBt = false
-                                                        }
+                                                        runBluetoothScanOnDevice(dev.address, dev.name)
                                                     },
                                                     enabled = !isScanningBt,
                                                     shape = RoundedCornerShape(10.dp),
@@ -687,7 +804,7 @@ fun ObdGuideScreen(
                                     Spacer(modifier = Modifier.height(6.dp))
                                     OutlinedButton(
                                         onClick = {
-                                            BluetoothElm327Transport.openAndroidBluetoothSettings(context)
+                                             BluetoothElm327Transport.openAndroidBluetoothSettings(context)
                                         },
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = RoundedCornerShape(10.dp)
@@ -734,6 +851,286 @@ fun ObdGuideScreen(
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = Emerald900
                                             )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Phase 7 (Item 2): Automatic Test-Drive Monitoring Card (Foreground Service with visible notification)
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("obd_test_drive_monitor_card"),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(1.5.dp, if (isMonitoringDrive) Emerald700 else Slate200)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.DirectionsCar,
+                                    contentDescription = null,
+                                    tint = Emerald700,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = when (language) {
+                                        AppLanguage.AR -> "المراقبة التلقائية أثناء تجربة القيادة (الشاشة مغلقة)"
+                                        AppLanguage.FR -> "Suivi automatique d'essai routier (écran éteint)"
+                                        AppLanguage.EN -> "Automatic Test-Drive Monitoring (Screen-Off)"
+                                    },
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Slate900
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = when (language) {
+                                    AppLanguage.AR -> "اضغط «بدء تجربة القيادة» وضع الهاتف جانباً. يسجل التطبيق القراءات الحية عبر الفيشة مع إشعار مرئي، وعند الانتهاء يعرض لك أي ارتفاع في الحرارة أو تذبذب في الدوران أو ضعف في الشحن أو كود عطل ظهر أثناء السير لتأكيده."
+                                    AppLanguage.FR -> "Appuyez sur « Démarrer l'essai routier » et posez le téléphone. L'application enregistre les valeurs en direct avec une notification visible et signale à la fin toute surchauffe, ralenti instable, charge faible ou code défaut apparu."
+                                    AppLanguage.EN -> "Tap 'Start test drive' and put the phone down. A foreground service with a visible notification records live dongle readings and reports overheating, unstable idle, weak charging, or fault codes at the end for your confirmation."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Slate600,
+                                lineHeight = 18.sp
+                            )
+
+                            if (showNotificationPermExplanation) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Emerald50,
+                                    border = BorderStroke(1.dp, Emerald200)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Text(
+                                            text = when (language) {
+                                                AppLanguage.AR -> "لماذا نطلب صلاحية الإشعارات؟ لإبقاء مراقبة تجربة القيادة تعمل بموثوقية في الخلفية حتى عند إغلاق شاشة الهاتف."
+                                                AppLanguage.FR -> "Pourquoi l'autorisation de notification ? Pour afficher l'état de l'essai routier et garantir que le suivi continue même écran éteint."
+                                                AppLanguage.EN -> "Why allow notifications? So Android keeps the test-drive monitor running reliably with a visible status bar notification while your screen is off."
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Emerald900
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Button(
+                                            onClick = {
+                                                showNotificationPermExplanation = false
+                                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                                    notificationPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Emerald700)
+                                        ) {
+                                            Text(
+                                                text = when (language) {
+                                                    AppLanguage.AR -> "موافق، ابدأ المراقبة"
+                                                    AppLanguage.FR -> "Compris, démarrer"
+                                                    AppLanguage.EN -> "Got it, start monitoring"
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            if (!isMonitoringDrive) {
+                                val targetDev = pairedDevices.firstOrNull {
+                                    it.address.equals(rememberedDongleAddress, ignoreCase = true)
+                                } ?: pairedDevices.firstOrNull { it.isLikelyObdAdapter } ?: pairedDevices.firstOrNull()
+
+                                Button(
+                                    onClick = {
+                                        if (!hasBtPermission) {
+                                            btPermissionLauncher.launch(BluetoothElm327Transport.requiredBluetoothPermissions())
+                                            return@Button
+                                        }
+                                        if (targetDev == null) {
+                                            btStatusMessage = when (language) {
+                                                AppLanguage.AR -> "يرجى إقران جهاز ELM327 أولاً لبدء مراقبة تجربة القيادة."
+                                                AppLanguage.FR -> "Veuillez d'abord appairer un boîtier ELM327 pour lancer l'essai routier."
+                                                AppLanguage.EN -> "Please pair an ELM327 dongle first to start test-drive monitoring."
+                                            }
+                                            return@Button
+                                        }
+                                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                                            androidx.core.content.ContextCompat.checkSelfPermission(
+                                                context,
+                                                android.Manifest.permission.POST_NOTIFICATIONS
+                                            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                                        ) {
+                                            showNotificationPermExplanation = true
+                                        } else {
+                                            com.example.domain.ObdTestDriveMonitorService.startMonitoring(
+                                                context = context,
+                                                deviceAddress = targetDev.address,
+                                                deviceName = targetDev.name,
+                                                language = language
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("start_test_drive_btn"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Emerald700)
+                                ) {
+                                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "بدء تجربة القيادة (مراقبة تلقائية)"
+                                            AppLanguage.FR -> "Démarrer l'essai routier (suivi auto)"
+                                            AppLanguage.EN -> "Start test drive (automatic monitoring)"
+                                        },
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            } else {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Emerald50,
+                                    border = BorderStroke(1.dp, Emerald600)
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(18.dp),
+                                                strokeWidth = 2.dp,
+                                                color = Emerald700
+                                            )
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Text(
+                                                text = monitorStatusMsg.ifBlank {
+                                                    when (language) {
+                                                        AppLanguage.AR -> "مراقبة تجربة القيادة جارية ($monitorSamplesCount قراءة)..."
+                                                        AppLanguage.FR -> "Suivi d'essai routier en cours ($monitorSamplesCount mesures)..."
+                                                        AppLanguage.EN -> "Test-drive monitoring active ($monitorSamplesCount readings)..."
+                                                    }
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Emerald900
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Button(
+                                            onClick = {
+                                                com.example.domain.ObdTestDriveMonitorService.stopMonitoring(context)
+                                            },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .testTag("stop_test_drive_btn"),
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = StatusErrorRed)
+                                        ) {
+                                            Text(
+                                                text = when (language) {
+                                                    AppLanguage.AR -> "إنهاء تجربة القيادة وعرض الملخص"
+                                                    AppLanguage.FR -> "Terminer l'essai routier & voir le bilan"
+                                                    AppLanguage.EN -> "End test drive & view summary"
+                                                },
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Confirmation card when a test drive finishes (Rule 1: suggestion that user confirms before entering report)
+                            val summary = completedDriveSummary
+                            if (summary != null) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("test_drive_summary_confirmation_card"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (summary.hasAnyProblem) StatusWarningAmberContainer else Emerald50,
+                                    border = BorderStroke(
+                                        1.5.dp,
+                                        if (summary.hasAnyProblem) StatusWarningAmber else StatusPassGreen
+                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Text(
+                                            text = when (language) {
+                                                AppLanguage.AR -> "نتائج مراقبة تجربة القيادة المقترحة (يرجى التأكيد لإضافتها للتقرير):"
+                                                AppLanguage.FR -> "Résultats proposés de l'essai routier (confirmez pour ajouter au rapport) :"
+                                                AppLanguage.EN -> "Proposed Test-Drive Findings (confirm to add to report):"
+                                            },
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Slate900
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = summary.getSummaryLine(language),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Slate900
+                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            if (activeInspection != null) {
+                                                Button(
+                                                    onClick = {
+                                                        onConfirmTestDriveSummary(summary)
+                                                        com.example.domain.ObdTestDriveMonitorService.clearCompletedSummary()
+                                                    },
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .testTag("confirm_test_drive_summary_btn"),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Emerald700)
+                                                ) {
+                                                    Text(
+                                                        text = when (language) {
+                                                            AppLanguage.AR -> "تأكيد وإضافة للتقرير"
+                                                            AppLanguage.FR -> "Confirmer & Ajouter"
+                                                            AppLanguage.EN -> "Confirm & Add to Report"
+                                                        },
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White
+                                                    )
+                                                }
+                                            }
+                                            OutlinedButton(
+                                                onClick = {
+                                                    com.example.domain.ObdTestDriveMonitorService.clearCompletedSummary()
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) {
+                                                Text(
+                                                    text = when (language) {
+                                                        AppLanguage.AR -> "إغلاق / إدخال يدوي"
+                                                        AppLanguage.FR -> "Ignorer / Saisie manuelle"
+                                                        AppLanguage.EN -> "Dismiss / Manual Entry"
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall
+                                                )
+                                            }
                                         }
                                     }
                                 }

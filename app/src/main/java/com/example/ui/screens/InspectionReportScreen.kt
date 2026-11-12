@@ -195,6 +195,48 @@ fun InspectionReportScreen(
             )
         }
 
+        // 2b. Phase 7 (Item 6): Plain-Language Summary Card (3-4 sentences from deterministic templates in 3 languages)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("plain_language_summary_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Emerald50),
+                border = BorderStroke(1.5.dp, Emerald600)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Description,
+                            contentDescription = null,
+                            tint = Emerald800,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = when (language) {
+                                AppLanguage.AR -> "ملخص الفحص بلغة مبسطة (نقاط القوة، العيوب، وما تسأل عنه الميكانيكي)"
+                                AppLanguage.FR -> "Résumé en langage clair (Points forts, défauts & questions au mécanicien)"
+                                AppLanguage.EN -> "Plain-Language Summary (Strengths, Problems & What to Ask a Mechanic)"
+                            },
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Emerald900
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = report.getPlainLanguageSummary(language),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Slate900,
+                        lineHeight = 21.sp,
+                        modifier = Modifier.testTag("plain_language_summary_text")
+                    )
+                }
+            }
+        }
+
         // 3. Primary Actions: Export/Share PDF + Edit Checklist + Scan OBD2
         item {
             Card(

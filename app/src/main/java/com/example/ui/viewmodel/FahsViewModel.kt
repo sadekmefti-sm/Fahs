@@ -16,6 +16,7 @@ import com.example.data.repository.ShopSettingsRepository
 import com.example.domain.ChecklistEngine
 import com.example.domain.EcuVinComparisonChoice
 import com.example.domain.ObdScanResult
+import com.example.domain.TestDriveMonitoringSummary
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -607,6 +608,162 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateOdometerForActiveInspection(newOdometerKm: Int) {
+        val inspectionId = _activeInspectionId.value ?: return
+        if (newOdometerKm <= 0) return
+        viewModelScope.launch {
+            val current = repository.getInspection(inspectionId) ?: return@launch
+            repository.updateInspection(
+                current.copy(
+                    odometerKm = newOdometerKm,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    companion object {
+        const val OBD_AUTO_ANSWER_TAG = "[Answered by OBD2 scan]"
+
+        data class ProposedObdChecklistAnswer(
+            val item: ChecklistItemDefinition,
+            val status: String,
+            val reasonFr: String,
+            val reasonAr: String,
+            val reasonEn: String
+        ) {
+            fun getReason(lang: AppLanguage): String = when (lang) {
+                AppLanguage.AR -> reasonAr
+                AppLanguage.FR -> reasonFr
+                AppLanguage.EN -> reasonEn
+            }
+        }
+
+        /**
+         * Phase 7 (Item 1): Determines which checklist items can be automatically answered
+         * by a real OBD2 scan based on the parameters that the car's ECU actually reported.
+         */
+        fun buildAutoAnsweredChecklistItemsFromScan(
+            scanResult: ObdScanResult,
+            milBulbLitOnDashboard: Boolean,
+            ecuVinComparison: EcuVinComparisonChoice,
+            adaptiveItems: List<ChecklistItemDefinition>
+        ): List<ProposedObdChecklistAnswer> {
+            if (!scanResult.isCommunicationSuccess || scanResult.isSimulated) return emptyList()
+            val itemsById = adaptiveItems.associateBy { it.id }
+            val proposals = mutableListOf<ProposedObdChecklistAnswer>()
+
+            // 1. Dashboard warning lights & MIL check (int_dashboard_warning_lights)
+            itemsById["int_dashboard_warning_lights"]?.let { def ->
+                val isMilTampered = !milBulbLitOnDashboard || (scanResult.milCommandedOn == true && !milBulbLitOnDashboard)
+                val isMilActive = scanResult.milCommandedOn == true
+                val status = if (isMilTampered || isMilActive) "PROBLEM" else "GOOD"
+                val reasonFr = when {
+                    isMilTampered -> "$OBD_AUTO_ANSWER_TAG Voyant Check-Engine absent au contact"
+                    isMilActive -> "$OBD_AUTO_ANSWER_TAG Voyant Check-Engine commandé ON par le calculateur"
+                    else -> "$OBD_AUTO_ANSWER_TAG Voyant Check-Engine présent au contact et éteint (MIL OFF)"
+                }
+                val reasonAr = when {
+                    isMilTampered -> "$OBD_AUTO_ANSWER_TAG لمبة Check-Engine لا تضيء عند فتح الكونتاكت"
+                    isMilActive -> "$OBD_AUTO_ANSWER_TAG الكمبيوتر يأمر بإضاءة لمبة المحرك (MIL ON)"
+                    else -> "$OBD_AUTO_ANSWER_TAG لمبة المحرك سليمة ومنطفئة (MIL OFF)"
+                }
+                val reasonEn = when {
+                    isMilTampered -> "$OBD_AUTO_ANSWER_TAG Check-Engine bulb did not light at key-on"
+                    isMilActive -> "$OBD_AUTO_ANSWER_TAG Check-Engine MIL commanded ON by ECU"
+                    else -> "$OBD_AUTO_ANSWER_TAG Check-Engine bulb works and MIL is OFF"
+                }
+                proposals.add(ProposedObdChecklistAnswer(def, status, reasonFr, reasonAr, reasonEn))
+            }
+
+            // 2. Battery & Alternator charging voltage (bonnet_battery_alternator)
+            val voltGauge = scanResult.liveParameters.firstOrNull { it.id == "volt" && it.status != "UNAVAILABLE" }
+            if (voltGauge != null) {
+                itemsById["bonnet_battery_alternator"]?.let { def ->
+                    val status = if (voltGauge.status == "GREEN") "GOOD" else "PROBLEM"
+                    proposals.add(
+                        ProposedObdChecklistAnswer(
+                            item = def,
+                            status = status,
+                            reasonFr = "$OBD_AUTO_ANSWER_TAG Tension lue par ELM327 : ${voltGauge.valueText}",
+                            reasonAr = "$OBD_AUTO_ANSWER_TAG جهد البطارية/الشحن المقروء عبر الفيشة: ${voltGauge.valueText}",
+                            reasonEn = "$OBD_AUTO_ANSWER_TAG Voltage read by ELM327: ${voltGauge.valueText}"
+                        )
+                    )
+                }
+            }
+
+            // 3. Engine coolant temperature (after_temp_fan_operation)
+            val tempGauge = scanResult.liveParameters.firstOrNull { it.id == "temp" && it.status != "UNAVAILABLE" }
+            if (tempGauge != null && (tempGauge.status == "GREEN" || tempGauge.status == "RED")) {
+                itemsById["after_temp_fan_operation"]?.let { def ->
+                    val status = if (tempGauge.status == "GREEN") "GOOD" else "PROBLEM"
+                    proposals.add(
+                        ProposedObdChecklistAnswer(
+                            item = def,
+                            status = status,
+                            reasonFr = "$OBD_AUTO_ANSWER_TAG Température liquide de refroidissement : ${tempGauge.valueText}",
+                            reasonAr = "$OBD_AUTO_ANSWER_TAG حرارة سائل التبريد المقروءة: ${tempGauge.valueText}",
+                            reasonEn = "$OBD_AUTO_ANSWER_TAG Coolant temperature read by ECU: ${tempGauge.valueText}"
+                        )
+                    )
+                }
+            }
+
+            // 4. Engine idle RPM stability (start_idle_rpm_stability)
+            val rpmGauge = scanResult.liveParameters.firstOrNull { it.id == "rpm" && it.status != "UNAVAILABLE" }
+            val rpmNumber = rpmGauge?.valueText?.filter { it.isDigit() }?.toIntOrNull()
+            if (rpmGauge != null && rpmNumber != null && rpmNumber > 400) {
+                itemsById["start_idle_rpm_stability"]?.let { def ->
+                    val status = if (rpmGauge.status == "GREEN") "GOOD" else "PROBLEM"
+                    proposals.add(
+                        ProposedObdChecklistAnswer(
+                            item = def,
+                            status = status,
+                            reasonFr = "$OBD_AUTO_ANSWER_TAG Régime ralenti lu par calculateur : ${rpmGauge.valueText}",
+                            reasonAr = "$OBD_AUTO_ANSWER_TAG دوران المحرك (Ralenti) المقروء: ${rpmGauge.valueText}",
+                            reasonEn = "$OBD_AUTO_ANSWER_TAG Engine idle RPM read by ECU: ${rpmGauge.valueText}"
+                        )
+                    )
+                }
+            }
+
+            // 5. Fault codes & cleared-codes check (final_obd_pending_after_drive)
+            itemsById["final_obd_pending_after_drive"]?.let { def ->
+                val hasFaultsOrReset = scanResult.dtcList.isNotEmpty() || scanResult.isRecentlyClearedFraudAlert
+                val status = if (hasFaultsOrReset) "PROBLEM" else "GOOD"
+                val dtcSummary = if (scanResult.dtcList.isEmpty()) "0 DTC" else scanResult.dtcList.joinToString(", ") { it.code }
+                proposals.add(
+                    ProposedObdChecklistAnswer(
+                        item = def,
+                        status = status,
+                        reasonFr = "$OBD_AUTO_ANSWER_TAG Codes défauts calculateur : $dtcSummary",
+                        reasonAr = "$OBD_AUTO_ANSWER_TAG أكواد أعطال الكمبيوتر: $dtcSummary",
+                        reasonEn = "$OBD_AUTO_ANSWER_TAG ECU fault codes: $dtcSummary"
+                    )
+                )
+            }
+
+            // 6. Chassis VIN comparison if user compared ECU VIN with Carte Grise (doc_vin_three_way_match)
+            if (!scanResult.ecuVin.isNullOrBlank() && ecuVinComparison != EcuVinComparisonChoice.COULD_NOT_COMPARE) {
+                itemsById["doc_vin_three_way_match"]?.let { def ->
+                    val status = if (ecuVinComparison == EcuVinComparisonChoice.SAME) "GOOD" else "PROBLEM"
+                    proposals.add(
+                        ProposedObdChecklistAnswer(
+                            item = def,
+                            status = status,
+                            reasonFr = "$OBD_AUTO_ANSWER_TAG VIN calculateur (${scanResult.ecuVin}) comparé à la carte grise",
+                            reasonAr = "$OBD_AUTO_ANSWER_TAG رقم الشاسيه في الكمبيوتر (${scanResult.ecuVin}) تمت مقارنته بالبطاقة الرمادية",
+                            reasonEn = "$OBD_AUTO_ANSWER_TAG ECU VIN (${scanResult.ecuVin}) compared with carte grise"
+                        )
+                    )
+                }
+            }
+
+            return proposals
+        }
+    }
+
     private val _lastObdScanResult = MutableStateFlow<ObdScanResult?>(null)
     val lastObdScanResult: StateFlow<ObdScanResult?> = _lastObdScanResult.asStateFlow()
 
@@ -624,6 +781,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val current = repository.getInspection(inspectionId) ?: return@launch
             val existingAnswers = activeInspectionAnswers.value
+            val lang = _currentLanguage.value
 
             val isMilTampered = !milBulbLitOnDashboard || (scanResult.milCommandedOn == true && !milBulbLitOnDashboard)
             val isEcuVinDifferent = !scanResult.ecuVin.isNullOrBlank() &&
@@ -687,6 +845,50 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
             val updatedMap = existingAnswers.associateBy { it.itemId }.toMutableMap()
             updatedMap[obdAnswer.itemId] = obdAnswer
 
+            // Phase 7 (Item 1): Fill in matching checklist items automatically from the confirmed OBD scan
+            val isQuickMode = current.inspectionMode.equals("QUICK", ignoreCase = true)
+            val adaptiveItems = ChecklistEngine.buildChecklistForCar(
+                brand = current.carBrand,
+                model = current.carModel,
+                fuelType = current.fuelType,
+                gearboxType = current.gearboxType,
+                isQuickMode = isQuickMode,
+                generation = current.carGeneration,
+                engineDescription = current.engineDescription,
+                carYear = current.carYear,
+                odometerKm = current.odometerKm,
+                hasTurbo = current.hasTurbo,
+                isFourWheelDrive = current.isFourWheelDrive,
+                bodyType = current.bodyType
+            )
+            val autoAnsweredProposals = buildAutoAnsweredChecklistItemsFromScan(
+                scanResult = scanResult,
+                milBulbLitOnDashboard = milBulbLitOnDashboard,
+                ecuVinComparison = ecuVinComparison,
+                adaptiveItems = adaptiveItems
+            )
+            for (proposal in autoAnsweredProposals) {
+                val existingItem = updatedMap[proposal.item.id]
+                val autoEntity = ChecklistAnswerEntity(
+                    id = existingItem?.id ?: 0L,
+                    inspectionId = inspectionId,
+                    itemId = proposal.item.id,
+                    category = proposal.item.section.name,
+                    questionFr = proposal.item.questionFr,
+                    questionAr = proposal.item.questionAr,
+                    questionEn = proposal.item.questionEn,
+                    status = proposal.status,
+                    severity = proposal.item.severity.name,
+                    estimatedCostDzd = 0,
+                    note = proposal.getReason(lang),
+                    photoUri = existingItem?.photoUri,
+                    timestamp = System.currentTimeMillis()
+                )
+                repository.saveAnswer(autoEntity)
+                updatedMap[proposal.item.id] = autoEntity
+            }
+
+            val answeredChecklistCount = adaptiveItems.count { updatedMap.containsKey(it.id) }
             val problemCount = updatedMap.values.count { it.status == "PROBLEM" }
 
             val mergedNotes = if (current.notes.contains("[OBD2 Scan:")) {
@@ -724,12 +926,112 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                     obdMilCommandedByEcu = milCommandedStr,
                     obdEcuVin = scanResult.ecuVin.orEmpty(),
                     obdEcuVinComparison = vinComparisonStr,
+                    answeredQuestions = answeredChecklistCount,
                     problemCount = problemCount,
                     notes = mergedNotes,
                     updatedAt = System.currentTimeMillis()
                 )
             )
 
+            if (returnToChecklist) {
+                _selectedTab.value = NavTab.CHECKLIST_WIZARD
+            }
+        }
+    }
+
+    /**
+     * Phase 7 (Item 2): Applies a user-confirmed automatic test-drive monitoring summary
+     * to the active inspection's checklist items and notes.
+     */
+    fun applyConfirmedTestDriveSummary(
+        summary: TestDriveMonitoringSummary,
+        returnToChecklist: Boolean = true
+    ) {
+        val inspectionId = _activeInspectionId.value ?: return
+        viewModelScope.launch {
+            val current = repository.getInspection(inspectionId) ?: return@launch
+            val existingAnswers = activeInspectionAnswers.value
+            val lang = _currentLanguage.value
+            val isQuickMode = current.inspectionMode.equals("QUICK", ignoreCase = true)
+            val adaptiveItems = ChecklistEngine.buildChecklistForCar(
+                brand = current.carBrand,
+                model = current.carModel,
+                fuelType = current.fuelType,
+                gearboxType = current.gearboxType,
+                isQuickMode = isQuickMode,
+                generation = current.carGeneration,
+                engineDescription = current.engineDescription,
+                carYear = current.carYear,
+                odometerKm = current.odometerKm,
+                hasTurbo = current.hasTurbo,
+                isFourWheelDrive = current.isFourWheelDrive,
+                bodyType = current.bodyType
+            )
+            val itemsById = adaptiveItems.associateBy { it.id }
+            val updatedMap = existingAnswers.associateBy { it.itemId }.toMutableMap()
+
+            suspend fun upsertAutoItem(itemId: String, status: String, detail: String) {
+                val def = itemsById[itemId] ?: return
+                val prev = updatedMap[itemId]
+                val entity = ChecklistAnswerEntity(
+                    id = prev?.id ?: 0L,
+                    inspectionId = inspectionId,
+                    itemId = def.id,
+                    category = def.section.name,
+                    questionFr = def.questionFr,
+                    questionAr = def.questionAr,
+                    questionEn = def.questionEn,
+                    status = status,
+                    severity = def.severity.name,
+                    estimatedCostDzd = 0,
+                    note = "$OBD_AUTO_ANSWER_TAG $detail",
+                    photoUri = prev?.photoUri,
+                    timestamp = System.currentTimeMillis()
+                )
+                repository.saveAnswer(entity)
+                updatedMap[itemId] = entity
+            }
+
+            if (summary.maxCoolantTempC != null) {
+                upsertAutoItem(
+                    itemId = "after_temp_fan_operation",
+                    status = if (summary.overheatingDetected) "PROBLEM" else "GOOD",
+                    detail = "Max temp test-drive: ${summary.maxCoolantTempC} °C"
+                )
+            }
+            if (summary.minIdleRpm != null && summary.maxIdleRpm != null) {
+                upsertAutoItem(
+                    itemId = "start_idle_rpm_stability",
+                    status = if (summary.unstableIdleDetected) "PROBLEM" else "GOOD",
+                    detail = "Idle RPM test-drive: ${summary.minIdleRpm}-${summary.maxIdleRpm} tr/min"
+                )
+            }
+            if (summary.minVoltage != null) {
+                upsertAutoItem(
+                    itemId = "bonnet_battery_alternator",
+                    status = if (summary.weakChargingDetected) "PROBLEM" else "GOOD",
+                    detail = "Voltage test-drive: ${summary.minVoltage}-${summary.maxVoltage} V"
+                )
+            }
+            upsertAutoItem(
+                itemId = "final_obd_pending_after_drive",
+                status = if (summary.faultCodesAppeared.isNotEmpty()) "PROBLEM" else "GOOD",
+                detail = if (summary.faultCodesAppeared.isEmpty()) "0 DTC after test-drive" else "DTC during drive: ${summary.faultCodesAppeared.joinToString(", ")}"
+            )
+
+            val summaryLine = "[Test-Drive OBD: ${summary.getSummaryLine(lang)}]"
+            val mergedNotes = if (current.notes.isBlank()) summaryLine else "${current.notes}\n$summaryLine"
+            val answeredChecklistCount = adaptiveItems.count { updatedMap.containsKey(it.id) }
+            val problemCount = updatedMap.values.count { it.status == "PROBLEM" }
+
+            repository.updateInspection(
+                current.copy(
+                    answeredQuestions = answeredChecklistCount,
+                    problemCount = problemCount,
+                    notes = mergedNotes,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
             if (returnToChecklist) {
                 _selectedTab.value = NavTab.CHECKLIST_WIZARD
             }

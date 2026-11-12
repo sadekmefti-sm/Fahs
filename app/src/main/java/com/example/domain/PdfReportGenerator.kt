@@ -186,6 +186,26 @@ object PdfReportGenerator {
         drawMultilineText(canvas, combinedSummary, bodyPaint, MARGIN_H + 14f, yPos + 32f, CONTENT_WIDTH - 28, alignment)
         yPos += verdictBoxHeight + 12f
 
+        // 2b. Plain-language summary (3-4 sentences from templates)
+        val plainSummaryTitle = when (language) {
+            AppLanguage.AR -> "ملخص الفحص بلغة مبسطة"
+            AppLanguage.FR -> "Résumé en langage clair"
+            AppLanguage.EN -> "Plain-Language Summary"
+        }
+        val plainSummaryBody = report.getPlainLanguageSummary(language)
+        val plainLinesEst = (plainSummaryBody.length / 65) + 3
+        val plainBoxHeight = (36f + plainLinesEst * 13f).coerceAtLeast(68f)
+        startNewPageIfNeeded(plainBoxHeight + 12f)
+        canvas.drawRoundRect(
+            RectF(MARGIN_H, yPos, PAGE_WIDTH - MARGIN_H, yPos + plainBoxHeight),
+            10f,
+            10f,
+            greenBoxPaint
+        )
+        drawMultilineText(canvas, plainSummaryTitle, bodyBoldPaint, MARGIN_H + 12f, yPos + 8f, CONTENT_WIDTH - 24, alignment)
+        drawMultilineText(canvas, plainSummaryBody, bodyPaint, MARGIN_H + 12f, yPos + 24f, CONTENT_WIDTH - 24, alignment)
+        yPos += plainBoxHeight + 12f
+
         // 3. Optional Plate Label & User-Entered Mechanic Quote / Fair Offer Box
         val plateText = if (report.inspection.plateNumber.isNotBlank()) report.inspection.plateNumber else "—"
         val effectiveAskingMillions = sellerAskingMillions?.takeIf { it > 0.0 }

@@ -226,6 +226,14 @@ fun ObdScanResultSection(
 
         // 9. Save Scan to Active Inspection (strictly blocked for simulated results)
         if (hasActiveInspection && !scanResult.isSimulated) {
+            if (scanResult.isCommunicationSuccess) {
+                ProposedScanChecklistAnswersCard(
+                    scanResult = scanResult,
+                    milBulbLitOnDashboard = milBulbLitOnDashboard,
+                    ecuVinComparison = ecuVinComparison,
+                    language = language
+                )
+            }
             SaveObdToInspectionButton(
                 language = language,
                 onClick = onSaveToInspection
@@ -1156,6 +1164,87 @@ private fun DeveloperRawExchangeLogCard(
 }
 
 @Composable
+private fun ProposedScanChecklistAnswersCard(
+    scanResult: ObdScanResult,
+    milBulbLitOnDashboard: Boolean,
+    ecuVinComparison: EcuVinComparisonChoice,
+    language: AppLanguage
+) {
+    val proposals = androidx.compose.runtime.remember(scanResult, milBulbLitOnDashboard, ecuVinComparison) {
+        com.example.ui.viewmodel.FahsViewModel.buildAutoAnsweredChecklistItemsFromScan(
+            scanResult = scanResult,
+            milBulbLitOnDashboard = milBulbLitOnDashboard,
+            ecuVinComparison = ecuVinComparison,
+            adaptiveItems = com.example.domain.ChecklistEngine.fullLibrary
+        )
+    }
+    if (proposals.isEmpty()) return
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("obd_proposed_checklist_answers_card"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Emerald50),
+        border = BorderStroke(1.5.dp, Emerald600)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = when (language) {
+                    AppLanguage.AR -> "أسئلة الفحص التي سيجيب عنها الفحص تلقائياً (${proposals.size} نقاط — اضغط حفظ للتأكيد)"
+                    AppLanguage.FR -> "Questions de la checklist remplies par ce scan (${proposals.size} points — confirmez en enregistrant)"
+                    AppLanguage.EN -> "Checklist Items Answered by This Scan (${proposals.size} items — confirm by saving)"
+                },
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = Emerald900
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = when (language) {
+                    AppLanguage.AR -> "لن يُعيد التطبيق سؤالك عن هذه النقاط أثناء الفحص الميداني، مع بقاء إمكانية تعديلها يدوياً في أي وقت:"
+                    AppLanguage.FR -> "Ces questions seront marquées « Répondu par le scan OBD2 » et ne vous seront plus reposées (modifiables manuellement) :"
+                    AppLanguage.EN -> "These questions will be marked 'Answered by the scan' and skipped automatically (you can still override them manually anytime):"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = Slate700
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            proposals.forEach { prop ->
+                val isGood = prop.status == "GOOD"
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        imageVector = if (isGood) Icons.Default.CheckCircle else Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = if (isGood) StatusPassGreen else StatusErrorRed,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = prop.item.getQuestion(language),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Slate900
+                        )
+                        Text(
+                            text = prop.getReason(language),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isGood) StatusPassGreenOnContainer else StatusErrorRed
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SaveObdToInspectionButton(
     language: AppLanguage,
     onClick: () -> Unit
@@ -1177,9 +1266,9 @@ private fun SaveObdToInspectionButton(
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = when (language) {
-                AppLanguage.AR -> "حفظ نتائج فحص OBD2 في تقرير السيارة الحالية"
-                AppLanguage.FR -> "Enregistrer ce scan OBD2 dans l'inspection en cours"
-                AppLanguage.EN -> "Save OBD2 Scan Results to Active Inspection"
+                AppLanguage.AR -> "تأكيد وحفظ نتائج الفحص والإجابات التلقائية"
+                AppLanguage.FR -> "Confirmer & Enregistrer le scan et les réponses auto"
+                AppLanguage.EN -> "Confirm & Save Scan + Auto-Answered Items"
             },
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,

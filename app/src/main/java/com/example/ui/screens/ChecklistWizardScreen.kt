@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -204,6 +205,27 @@ fun ChecklistWizardScreen(
     val safeIndex = currentIndex.coerceIn(0, (adaptiveItems.size - 1).coerceAtLeast(0))
     val currentItem = adaptiveItems.getOrNull(safeIndex) ?: return
     val currentSaved = answersMap[currentItem.id]
+
+    // Phase 7 (Items 4, 5, 9): Offline TTS & SpeechRecognizer controller
+    val voiceController = remember(context) {
+        com.example.domain.OfflineVoiceAndTtsController(context)
+    }
+    androidx.compose.runtime.DisposableEffect(voiceController) {
+        onDispose { voiceController.shutdown() }
+    }
+    val voiceAvailabilityMap by voiceController.voiceAvailability.collectAsState()
+    val isListeningVoice by voiceController.isListeningVoice.collectAsState()
+    var isReadAloudEnabled by remember {
+        mutableStateOf(com.example.core.i18n.LanguagePreferences.isReadAloudEnabled(context))
+    }
+    val isVoiceAvailableForCurrentLang = voiceAvailabilityMap[language] == true
+
+    // Automatically read each question aloud when Read-Aloud is enabled and voice is available
+    LaunchedEffect(currentItem.id, isReadAloudEnabled, isVoiceAvailableForCurrentLang, language) {
+        if (isReadAloudEnabled && isVoiceAvailableForCurrentLang) {
+            voiceController.speakQuestion(currentItem.getQuestion(language), language)
+        }
+    }
 
     var showHowToCheck by remember(currentItem.id) { mutableStateOf(false) }
     var showNoteEditor by remember(currentItem.id) {
@@ -559,6 +581,39 @@ fun ChecklistWizardScreen(
                 }
             }
 
+            // Phase 7 (Item 5 & Item 9 Beta): Read-Aloud Bar (hidden if phone has no voice for current language) + Beta Voice Answers
+            ReadAloudAndBetaVoiceAnswerBar(
+                isVoiceAvailableForLanguage = isVoiceAvailableForCurrentLang,
+                isReadAloudEnabled = isReadAloudEnabled,
+                onToggleReadAloud = { enabled ->
+                    isReadAloudEnabled = enabled
+                    com.example.core.i18n.LanguagePreferences.setReadAloudEnabled(context, enabled)
+                    if (!enabled) {
+                        voiceController.stopSpeaking()
+                    }
+                },
+                onReplayQuestionAloud = {
+                    voiceController.speakQuestion(currentItem.getQuestion(language), language)
+                },
+                language = language,
+                isListeningVoice = isListeningVoice,
+                voiceController = voiceController,
+                onConfirmVoiceAnswer = { confirmedStatus ->
+                    onSaveAnswer(currentItem, confirmedStatus, noteText, photoLabel, adaptiveItems.size)
+                    if (safeIndex < adaptiveItems.size - 1) {
+                        currentIndex = findNextIndexSkippingObdAnswered(safeIndex, adaptiveItems, answersMap)
+                    }
+                }
+            )
+
+            // Phase 7 (Item 1): If this item was answered by the OBD scan, show clear badge
+            if (isChecklistItemAnsweredByObdScan(currentSaved) && currentSaved != null) {
+                AnsweredByObdScanBanner(
+                    savedAnswer = currentSaved,
+                    language = language
+                )
+            }
+
             // Visual Car Zone Diagram + Severity & Repair Cost Card
             CarZoneDiagramCard(
                 section = currentItem.section,
@@ -707,6 +762,20 @@ fun ChecklistWizardScreen(
                 }
             }
 
+            // Phase 7 (Item 8 Beta): Tyre Age 4-Digit DOT Code Reader (Photo + Manual Side-by-Side)
+            if (currentItem.id == "ext_tires_wear_date") {
+                BetaTyreAgeReaderCard(
+                    language = language,
+                    onConfirmTyreAgeNote = { confirmedDotLine, isOldTyre ->
+                        val updatedNote = if (noteText.isBlank()) confirmedDotLine else "$noteText | $confirmedDotLine"
+                        noteText = updatedNote
+                        showNoteEditor = true
+                        val statusToSave = if (isOldTyre) "PROBLEM" else (currentSaved?.status ?: "GOOD")
+                        onSaveAnswer(currentItem, statusToSave, updatedNote, photoLabel, adaptiveItems.size)
+                    }
+                )
+            }
+
             // 3. Three Large Outdoor Answer Buttons (GOOD / PROBLEM / COULD NOT CHECK)
             val currentStatus = currentSaved?.status
             Column(
@@ -732,7 +801,7 @@ fun ChecklistWizardScreen(
                     onClick = {
                         onSaveAnswer(currentItem, "GOOD", noteText, photoLabel, adaptiveItems.size)
                         if (safeIndex < adaptiveItems.size - 1) {
-                            currentIndex = safeIndex + 1
+                            currentIndex = findNextIndexSkippingObdAnswered(safeIndex, adaptiveItems, answersMap)
                         }
                     }
                 )
@@ -756,7 +825,7 @@ fun ChecklistWizardScreen(
                     onClick = {
                         onSaveAnswer(currentItem, "PROBLEM", noteText, photoLabel, adaptiveItems.size)
                         if (safeIndex < adaptiveItems.size - 1) {
-                            currentIndex = safeIndex + 1
+                            currentIndex = findNextIndexSkippingObdAnswered(safeIndex, adaptiveItems, answersMap)
                         }
                     }
                 )
@@ -784,7 +853,7 @@ fun ChecklistWizardScreen(
                     onClick = {
                         onSaveAnswer(currentItem, "UNCHECKED", noteText, photoLabel, adaptiveItems.size)
                         if (safeIndex < adaptiveItems.size - 1) {
-                            currentIndex = safeIndex + 1
+                            currentIndex = findNextIndexSkippingObdAnswered(safeIndex, adaptiveItems, answersMap)
                         }
                     }
                 )
@@ -982,6 +1051,24 @@ fun ChecklistWizardScreen(
 
                     AnimatedVisibility(visible = showNoteEditor) {
                         Column(modifier = Modifier.padding(top = 12.dp)) {
+                            // Phase 7 (Item 4): Voice Note Microphone Dictation Row with confirmation before adding
+                            VoiceNoteDictationRow(
+                                language = language,
+                                isListeningVoice = isListeningVoice,
+                                voiceController = voiceController,
+                                onConfirmDictatedNote = { spokenText ->
+                                    val combined = if (noteText.isBlank()) spokenText else "$noteText $spokenText"
+                                    noteText = combined
+                                    onSaveAnswer(
+                                        currentItem,
+                                        currentSaved?.status ?: "UNCHECKED",
+                                        combined,
+                                        photoLabel,
+                                        adaptiveItems.size
+                                    )
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
                             OutlinedTextField(
                                 value = noteText,
                                 onValueChange = { newNote ->
@@ -994,7 +1081,9 @@ fun ChecklistWizardScreen(
                                         adaptiveItems.size
                                     )
                                 },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("wizard_note_text_field"),
                                 placeholder = {
                                     Text(
                                         when (language) {
@@ -1030,7 +1119,9 @@ fun ChecklistWizardScreen(
             ) {
                 OutlinedButton(
                     onClick = {
-                        if (safeIndex > 0) currentIndex = safeIndex - 1
+                        if (safeIndex > 0) {
+                            currentIndex = findPreviousIndexSkippingObdAnswered(safeIndex, adaptiveItems, answersMap)
+                        }
                     },
                     enabled = safeIndex > 0,
                     modifier = Modifier
@@ -1059,7 +1150,9 @@ fun ChecklistWizardScreen(
 
                 if (safeIndex < adaptiveItems.size - 1) {
                     Button(
-                        onClick = { currentIndex = safeIndex + 1 },
+                        onClick = {
+                            currentIndex = findNextIndexSkippingObdAnswered(safeIndex, adaptiveItems, answersMap)
+                        },
                         modifier = Modifier
                             .weight(1.3f)
                             .height(48.dp)

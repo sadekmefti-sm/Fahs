@@ -518,9 +518,23 @@ fun MainScreen(
                             )
                             scope.launch {
                                 val msg = when (currentLanguage) {
-                                    AppLanguage.AR -> "تم حفظ نتائج فحص OBD2 في تقرير السيارة"
-                                    AppLanguage.FR -> "Résultats OBD2 enregistrés dans l'inspection"
-                                    AppLanguage.EN -> "OBD2 scan results saved to inspection"
+                                    AppLanguage.AR -> "تم حفظ نتائج فحص OBD2 والإجابات التلقائية في تقرير السيارة"
+                                    AppLanguage.FR -> "Résultats OBD2 et réponses auto enregistrés dans l'inspection"
+                                    AppLanguage.EN -> "OBD2 scan results and auto-answers saved to inspection"
+                                }
+                                snackbarHostState.showSnackbar(msg)
+                            }
+                        },
+                        onConfirmTestDriveSummary = { summary ->
+                            viewModel.applyConfirmedTestDriveSummary(
+                                summary = summary,
+                                returnToChecklist = activeInspection != null
+                            )
+                            scope.launch {
+                                val msg = when (currentLanguage) {
+                                    AppLanguage.AR -> "تم تأكيد وحفظ ملخص تجربة القيادة في التقرير"
+                                    AppLanguage.FR -> "Bilan d'essai routier confirmé et enregistré"
+                                    AppLanguage.EN -> "Test-drive summary confirmed and saved to report"
                                 }
                                 snackbarHostState.showSnackbar(msg)
                             }

@@ -346,6 +346,180 @@ data class InspectionReportData(
         }
         return "$mainSummary $uncheckedNote"
     }
+
+    /**
+     * Phase 7 (Item 6): Plain-language summary at the top of the report.
+     * Built from deterministic templates in 3 languages (AR, FR, EN) — no AI model, 100% offline.
+     * Writes 3 or 4 sentences covering:
+     * 1. Main strengths (cleanest inspected areas)
+     * 2. Main problems found
+     * 3. Electronic OBD2 or unchecked critical context (when applicable)
+     * 4. What to ask a mechanic before buying
+     */
+    fun getPlainLanguageSummary(lang: AppLanguage): String {
+        val carLabel = "${inspection.carBrand} ${inspection.carModel} (${inspection.carYear})"
+        val topStrongSections = passedItems
+            .groupBy { it.getSectionTitle(lang) }
+            .entries
+            .sortedByDescending { it.value.size }
+            .take(2)
+            .map { it.key }
+
+        val allProblems = criticalProblems + negotiableProblems
+        val topProblemNames = allProblems.take(2).map { it.getQuestion(lang) }
+
+        return when (lang) {
+            AppLanguage.AR -> {
+                val sentence1 = if (topStrongSections.isNotEmpty()) {
+                    "أبرز نقاط القوة في سيارة $carLabel ظهرَت في قسم (${topStrongSections.joinToString(" و ")}) مع اجتياز ${passedItems.size} نقطة فحص بنجاح."
+                } else {
+                    "شمل فحص سيارة $carLabel مراجعة $checkedCount نقطة من أصل $totalApplicableCount نقطة مبرمجة لهذا الموديل."
+                }
+
+                val sentence2 = when {
+                    criticalProblems.isNotEmpty() -> {
+                        "أما أبرز المشاكل المرصودة فهي ${criticalProblems.size} عيب حرج و${negotiableProblems.size} ملاحظة أخرى، وعلى رأسها: ${topProblemNames.joinToString("، ")}."
+                    }
+                    negotiableProblems.isNotEmpty() -> {
+                        "لم تظهر عيوب حرجة قاتلة، لكن سُجلت ${negotiableProblems.size} ملاحظات تحتاج صيانة، أهمها: ${topProblemNames.joinToString("، ")}."
+                    }
+                    checkedCount > 0 -> {
+                        "لم يتم رصد أي عيب ميكانيكي أو هيكلي في النقاط التي تم فحصها."
+                    }
+                    else -> {
+                        "لم يتم إدخال إجابات كافية بعد لتحديد العيوب."
+                    }
+                }
+
+                val sentence3 = when {
+                    obdBlock.isScanned && obdBlock.hasCriticalAlert -> {
+                        "كما أظهر فحص الكمبيوتر (OBD2) تنبيهاً إلكترونياً (${obdBlock.getFaultCodesText(lang)}) يستوجب الفحص."
+                    }
+                    obdBlock.isScanned && obdBlock.isCommunicationSuccess -> {
+                        "وأكد فحص الكمبيوتر (OBD2) سلامة الذاكرة الإلكترونية وعدم وجود أكواد أعطال مسجلة."
+                    }
+                    uncheckedCriticalItems.isNotEmpty() -> {
+                        "يرجى الانتباه إلى أن ${uncheckedCriticalItems.size} نقاط حرجة لم يتم فحصها خلال المعاينة."
+                    }
+                    else -> null
+                }
+
+                val sentence4 = when {
+                    allProblems.isNotEmpty() -> {
+                        "قبل الشراء، اطلب من الميكانيكي رفع السيارة وفحص هذه الملاحظات بدقة وتقدير تكلفة إصلاحها بالدينار لخصمها من السعر."
+                    }
+                    uncheckedItems.isNotEmpty() -> {
+                        "اطلب من الميكانيكي مراجعة النقاط غير المفحوصة (${uncheckedItems.size} نقطة) على رافعة الورشة قبل دفع العربون."
+                    }
+                    else -> {
+                        "اطلب من الميكانيكي إجراء مراقبة روتينية سريعة لأسفل الهيكل والفرامل على الرافعة لتأكيد الحالة الممتازة قبل إتمام البيع."
+                    }
+                }
+
+                listOfNotNull(sentence1, sentence2, sentence3, sentence4).joinToString(" ")
+            }
+
+            AppLanguage.FR -> {
+                val sentence1 = if (topStrongSections.isNotEmpty()) {
+                    "Sur ce véhicule $carLabel, les principaux points forts concernent les zones « ${topStrongSections.joinToString(" » et « ")} » avec ${passedItems.size} points conformes."
+                } else {
+                    "L'inspection de ce véhicule $carLabel porte sur $checkedCount point(s) vérifié(s) sur $totalApplicableCount prévus."
+                }
+
+                val sentence2 = when {
+                    criticalProblems.isNotEmpty() -> {
+                        "Les problèmes principaux incluent ${criticalProblems.size} anomalie(s) critique(s) et ${negotiableProblems.size} point(s) secondaire(s), notamment : ${topProblemNames.joinToString(" ; ")}."
+                    }
+                    negotiableProblems.isNotEmpty() -> {
+                        "Aucun défaut critique bloquant n'a été relevé, mais ${negotiableProblems.size} point(s) demandent une remise en état, en particulier : ${topProblemNames.joinToString(" ; ")}."
+                    }
+                    checkedCount > 0 -> {
+                        "Aucune anomalie n'a été signalée sur l'ensemble des points contrôlés."
+                    }
+                    else -> {
+                        "Trop peu de points ont été renseignés pour établir un bilan des défauts."
+                    }
+                }
+
+                val sentence3 = when {
+                    obdBlock.isScanned && obdBlock.hasCriticalAlert -> {
+                        "Le diagnostic électronique OBD2 signale également un point d'attention (${obdBlock.getFaultCodesText(lang)})."
+                    }
+                    obdBlock.isScanned && obdBlock.isCommunicationSuccess -> {
+                        "Le scan calculateur OBD2 confirme par ailleurs l'absence de code défaut et une mémoire saine."
+                    }
+                    uncheckedCriticalItems.isNotEmpty() -> {
+                        "Notez toutefois que ${uncheckedCriticalItems.size} point(s) critique(s) n'ont pas pu être vérifiés sur place."
+                    }
+                    else -> null
+                }
+
+                val sentence4 = when {
+                    allProblems.isNotEmpty() -> {
+                        "Demandez à un mécanicien de contrôler ces anomalies sur un pont élévateur et de chiffrer les réparations en DZD avant toute négociation."
+                    }
+                    uncheckedItems.isNotEmpty() -> {
+                        "Demandez à votre mécanicien de vérifier sur pont les ${uncheckedItems.size} point(s) non contrôlés avant de conclure l'achat."
+                    }
+                    else -> {
+                        "Demandez simplement à un mécanicien une inspection visuelle finale sur pont (soubassement et freins) pour valider l'achat en toute sérénité."
+                    }
+                }
+
+                listOfNotNull(sentence1, sentence2, sentence3, sentence4).joinToString(" ")
+            }
+
+            AppLanguage.EN -> {
+                val sentence1 = if (topStrongSections.isNotEmpty()) {
+                    "On this $carLabel, the main strengths are in ${topStrongSections.joinToString(" and ")}, with ${passedItems.size} passed checks overall."
+                } else {
+                    "This inspection of the $carLabel covers $checkedCount checked item(s) out of $totalApplicableCount applicable checks."
+                }
+
+                val sentence2 = when {
+                    criticalProblems.isNotEmpty() -> {
+                        "The main problems found are ${criticalProblems.size} critical issue(s) and ${negotiableProblems.size} other defect(s), led by: ${topProblemNames.joinToString("; ")}."
+                    }
+                    negotiableProblems.isNotEmpty() -> {
+                        "No critical deal-breakers were found, though ${negotiableProblems.size} item(s) need attention, notably: ${topProblemNames.joinToString("; ")}."
+                    }
+                    checkedCount > 0 -> {
+                        "No mechanical or structural defects were recorded across the inspected items."
+                    }
+                    else -> {
+                        "Not enough items have been answered yet to summarise defects."
+                    }
+                }
+
+                val sentence3 = when {
+                    obdBlock.isScanned && obdBlock.hasCriticalAlert -> {
+                        "The electronic OBD2 scan also flagged an alert (${obdBlock.getFaultCodesText(lang)}) that needs verification."
+                    }
+                    obdBlock.isScanned && obdBlock.isCommunicationSuccess -> {
+                        "Furthermore, the OBD2 ECU scan confirmed zero fault codes and normal memory status."
+                    }
+                    uncheckedCriticalItems.isNotEmpty() -> {
+                        "Keep in mind that ${uncheckedCriticalItems.size} critical item(s) could not be checked during the visit."
+                    }
+                    else -> null
+                }
+
+                val sentence4 = when {
+                    allProblems.isNotEmpty() -> {
+                        "Ask a trusted mechanic to inspect these flagged items on a workshop lift and give you a written repair quote in DZD before negotiating."
+                    }
+                    uncheckedItems.isNotEmpty() -> {
+                        "Ask a mechanic to verify the ${uncheckedItems.size} unchecked item(s) on a lift before committing to buy."
+                    }
+                    else -> {
+                        "Ask a mechanic for a quick final check of the underbody and brakes on a lift to confirm everything before payment."
+                    }
+                }
+
+                listOfNotNull(sentence1, sentence2, sentence3, sentence4).joinToString(" ")
+            }
+        }
+    }
 }
 
 object ReportEngine {
