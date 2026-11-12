@@ -262,4 +262,23 @@ class CloudBackupRepository(
             throw e
         }
     }
+
+    suspend fun deleteAllBackupsForCurrentUser(): Result<Int> = runCatching {
+        val uid = requireUserId()
+        val colRef = db.collection("users").document(uid).collection("inspections")
+        try {
+            val snap = colRef.whereEqualTo("userId", uid).get().await()
+            var deletedCount = 0
+            for (doc in snap.documents) {
+                doc.reference.delete().await()
+                deletedCount++
+            }
+            deletedCount
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, colRef.path)
+            throw e
+        }
+    }
 }

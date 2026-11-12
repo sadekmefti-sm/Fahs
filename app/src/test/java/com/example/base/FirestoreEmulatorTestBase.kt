@@ -32,6 +32,10 @@ abstract class FirestoreEmulatorTestBase {
 
     @Before
     open fun setUpFirebase() {
+        org.junit.Assume.assumeTrue(
+            "Firebase Emulators not running on $EMULATOR_HOST:$FIRESTORE_PORT/$AUTH_PORT — skipping emulator rule test",
+            isPortOpen(EMULATOR_HOST, FIRESTORE_PORT) && isPortOpen(EMULATOR_HOST, AUTH_PORT)
+        )
         val context = ApplicationProvider.getApplicationContext<Context>()
         val resId = context.resources.getIdentifier("firestore_database_id", "string", context.packageName)
         databaseId = if (resId != 0) context.getString(resId) else "ai-studio-android-fahs-6b4ac22d-0983-4414-b677-09169a0178c4"
@@ -64,7 +68,20 @@ abstract class FirestoreEmulatorTestBase {
 
     @After
     open fun tearDownFirebase() {
-        auth.signOut()
+        if (::auth.isInitialized) {
+            auth.signOut()
+        }
+    }
+
+    private fun isPortOpen(host: String, port: Int): Boolean {
+        return try {
+            java.net.Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress(host, port), 200)
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     protected suspend fun signInTestUser(email: String): String = withContext(Dispatchers.IO) {

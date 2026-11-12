@@ -1434,16 +1434,17 @@ private fun PrivacyAndReleaseInfoContent(
         icon = Icons.Default.PrivacyTip,
         badgeColor = Emerald700,
         title = when (language) {
-            AppLanguage.AR -> "سياسة الخصوصية والتواصل: بياناتك ملكك وحدك"
-            AppLanguage.FR -> "Politique de Confidentialité & Contact : 100% Privé"
-            AppLanguage.EN -> "Privacy Policy & Contact: 100% Private"
+            AppLanguage.AR -> "سياسة الخصوصية وحذف البيانات: بياناتك ملكك وحدك"
+            AppLanguage.FR -> "Politique de Confidentialité & Suppression des Données"
+            AppLanguage.EN -> "Privacy Policy & Data Deletion Rights"
         },
         body = when (language) {
             AppLanguage.AR -> buildString {
                 appendLine("• التخزين المحلي أولاً: جميع الفحوصات، الصور، والملاحظات تحفظ داخل هاتفك فقط ولا تغادره أبداً بدون إذنك.")
                 appendLine("• استخدام الكاميرا: تُستخدم الكاميرا حصرياً لتصوير ملاحظات وعيوب الفحص لإدراجها في تقرير PDF.")
-                appendLine("• استخدام البلوتوث: يُستخدم حصرياً للاتصال بفيشة الفحص ELM327 OBD2.")
+                appendLine("• استخدام البلوتوث: يُستخدم حصرياً للاتصال بفيشة الفحص ELM327 OBD2 في وضع القراءة الآمنة فقط.")
                 appendLine("• النسخ الاحتياطي الاختياري: فقط في حال اخترت تسجيل الدخول بحساب Google والضغط على «حفظ سحابي»، يتم حفظ ملخصات الفحص في مساحتك الخاصة على Firebase Firestore.")
+                appendLine("• حذف بياناتك في أي وقت: يمكنك حذف أي فحص محلي أو حذف جميع النسخ الاحتياطية السحابية نهائياً بضغطة واحدة من شاشة «فحوصاتي».")
                 if (shopSettings.contactEmail.isNotBlank()) {
                     appendLine("• البريد الإلكتروني للتواصل: ${shopSettings.contactEmail}")
                 }
@@ -1455,8 +1456,9 @@ private fun PrivacyAndReleaseInfoContent(
             AppLanguage.FR -> buildString {
                 appendLine("• Stockage local par défaut : Toutes vos inspections, photos et notes sont enregistrées uniquement sur votre téléphone.")
                 appendLine("• Caméra : Utilisée exclusivement pour photographier les défauts observés et les joindre à votre rapport PDF.")
-                appendLine("• Bluetooth : Utilisé exclusivement pour communiquer avec votre boîtier ELM327 OBD2.")
+                appendLine("• Bluetooth : Utilisé exclusivement pour communiquer avec votre boîtier ELM327 OBD2 en lecture seule.")
                 appendLine("• Sauvegarde Cloud optionnelle : Uniquement si vous choisissez de vous connecter avec Google et cliquez sur « Sauvegarder », vos inspections sont copiées dans votre espace privé Cloud Firestore.")
+                appendLine("• Suppression des données : Vous pouvez supprimer à tout moment vos inspections locales ou effacer définitivement toutes vos sauvegardes Cloud depuis l'onglet « Inspections ».")
                 if (shopSettings.contactEmail.isNotBlank()) {
                     appendLine("• Email de contact : ${shopSettings.contactEmail}")
                 }
@@ -1468,8 +1470,9 @@ private fun PrivacyAndReleaseInfoContent(
             AppLanguage.EN -> buildString {
                 appendLine("• Offline Local Storage First: All your inspections, photos, and notes are stored strictly on your phone by default.")
                 appendLine("• Camera Permission: Used exclusively to photograph inspection findings and attach them to your PDF report.")
-                appendLine("• Bluetooth Permission: Used exclusively to communicate with your ELM327 OBD2 dongle.")
+                appendLine("• Bluetooth Permission: Used exclusively to communicate with your ELM327 OBD2 dongle in read-only mode.")
                 appendLine("• Optional Cloud Backup: Only if you explicitly sign in with Google and tap 'Back Up' are your inspection summaries saved to your private Cloud Firestore space.")
+                appendLine("• Data Deletion: You can permanently delete any local inspection or erase all Cloud backups at any time from the 'Inspections' tab.")
                 if (shopSettings.contactEmail.isNotBlank()) {
                     appendLine("• Contact Email: ${shopSettings.contactEmail}")
                 }
@@ -1484,14 +1487,14 @@ private fun PrivacyAndReleaseInfoContent(
         icon = Icons.Default.VerifiedUser,
         badgeColor = Slate800,
         title = when (language) {
-            AppLanguage.AR -> "تنبيه هام للمشتري (إخلاء مسؤولية فني)"
-            AppLanguage.FR -> "Avis important à l'acheteur (Conseil mécanique)"
-            AppLanguage.EN -> "Important Buyer Notice (Mechanical Disclaimer)"
+            AppLanguage.AR -> "شروط الاستخدام وإخلاء المسؤولية الفني"
+            AppLanguage.FR -> "Conditions d'utilisation & Avis mécanique"
+            AppLanguage.EN -> "Terms of Use & Mechanical Disclaimer"
         },
         body = when (language) {
-            AppLanguage.AR -> "صُمم تطبيق «فحص» ليكون الصديق الخبير الذي يقف بجانبك ويرشدك خطوة بخطوة، لكنه لا يعوض الفحص المعمق فوق الحفرة أو الرافعة عند ميكانيكي أو طولي ثقة في حال ظهور مؤشرات خطيرة في الشاسيه أو المحرك."
-            AppLanguage.FR -> "Fahs est conçu comme l'ami connaisseur qui vous guide méthodiquement devant le véhicule. En cas de doute sérieux sur les longerons, la compression moteur ou une boîte automatique, demandez toujours la confirmation d'un mécanicien ou d'un tôlier sur pont élévateur avant de payer."
-            AppLanguage.EN -> "Fahs acts as the knowledgeable friend standing next to you during an inspection. If critical signs appear on the chassis rails, engine internals, or automatic gearbox, always have a trusted mechanic confirm on a lift before paying."
+            AppLanguage.AR -> "• قاعدة الصدق والشفافية: لا يعرض تطبيق «فحص» أي قراءة أو نتيجة لم يتم فحصها فعلياً، ولا يحسب النتيجة النهائية إلا بعد الإجابة على جميع النقاط الحرجة و70% من الأسئلة على الأقل.\n• النقاط الإرشادية: الملاحظات الخاصة بالموديلات التي لم يعتمدها ميكانيكي بعد تحمل شارة «يُراجع مع ميكانيكي».\n• الفحص المعمق: صُمم التطبيق ليكون مساعدك الميداني خطوة بخطوة، لكنه لا يعوض الفحص فوق الرافعة (Pont) عند ميكانيكي أو طولي ثقة قبل دفع ثمن السيارة."
+            AppLanguage.FR -> "• Règle de transparence : Fahs n'affiche jamais de valeur non mesurée et ne calcule un score que lorsque tous les points critiques et au moins 70 % des questions sont renseignés.\n• Points indicatifs : Les conseils spécifiques non encore validés par un mécanicien portent la mention « À confirmer par un mécanicien ».\n• Contrôle sur pont : En cas de doute sur les longerons, le moteur ou la boîte automatique, faites toujours confirmer par un mécanicien ou un tôlier sur pont élévateur avant l'achat."
+            AppLanguage.EN -> "• Transparency Rule: Fahs never displays unmeasured values and only calculates a score when all critical items and at least 70% of questions are answered.\n• Advisory Tips: Model-specific notes not yet verified by a mechanic carry a 'To be verified by a mechanic' badge.\n• Lift Inspection: Fahs guides you step-by-step next to the car, but if critical signs appear on the chassis rails, engine, or automatic gearbox, always have a trusted mechanic confirm on a lift before paying."
         }
     )
 

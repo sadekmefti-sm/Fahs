@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.PlayArrow
@@ -105,10 +106,12 @@ fun SavedInspectionsScreen(
     onRefreshAuth: () -> Unit,
     onBackupToCloud: () -> Unit,
     onRestoreFromCloud: () -> Unit,
+    onDeleteAllCloudBackups: () -> Unit = {},
     onSeedComparisonDemo: () -> Unit,
     onNotifyMessage: (String) -> Unit,
     onStartNewInspection: () -> Unit,
     onSelectInspection: (Long) -> Unit,
+    onDuplicateInspection: (Long) -> Unit = {},
     onDeleteInspection: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -118,6 +121,7 @@ fun SavedInspectionsScreen(
 
     var selectedFilter by remember { mutableStateOf("ALL") }
     var itemToDelete by remember { mutableStateOf<InspectionEntity?>(null) }
+    var showDeleteCloudConfirm by remember { mutableStateOf(false) }
     val selectedForComparison = remember { mutableStateListOf<Long>() }
     var showComparisonDialog by remember { mutableStateOf(false) }
 
@@ -181,6 +185,58 @@ fun SavedInspectionsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { itemToDelete = null }) {
+                    Text(
+                        text = Strings.cancel(language),
+                        color = Slate600
+                    )
+                }
+            },
+            containerColor = Color.White,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (showDeleteCloudConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteCloudConfirm = false },
+            title = {
+                Text(
+                    text = when (language) {
+                        AppLanguage.AR -> "حذف النسخ الاحتياطية السحابية؟"
+                        AppLanguage.FR -> "Supprimer les sauvegardes Cloud ?"
+                        AppLanguage.EN -> "Delete All Cloud Backups?"
+                    },
+                    fontWeight = FontWeight.Bold,
+                    color = StatusErrorRed
+                )
+            },
+            text = {
+                Text(
+                    text = when (language) {
+                        AppLanguage.AR -> "سيتم حذف جميع الفحوصات المحفوظة في مساحتك السحابية نهائياً. ستبقى الفحوصات المحفوظة داخل هاتفك كما هي."
+                        AppLanguage.FR -> "Toutes les inspections enregistrées dans votre espace Cloud seront supprimées définitivement. Vos inspections locales sur ce téléphone seront conservées."
+                        AppLanguage.EN -> "All inspections stored in your Cloud backup will be permanently deleted. Your local inspections on this phone will remain untouched."
+                    },
+                    color = Slate700
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteCloudConfirm = false
+                        onDeleteAllCloudBackups()
+                    },
+                    modifier = Modifier.testTag("confirm_delete_cloud_backups_btn")
+                ) {
+                    Text(
+                        text = Strings.delete(language),
+                        fontWeight = FontWeight.Bold,
+                        color = StatusErrorRed
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteCloudConfirm = false }) {
                     Text(
                         text = Strings.cancel(language),
                         color = Slate600
@@ -333,7 +389,8 @@ fun SavedInspectionsScreen(
                         )
                     },
                     onBackupClick = onBackupToCloud,
-                    onRestoreClick = onRestoreFromCloud
+                    onRestoreClick = onRestoreFromCloud,
+                    onDeleteCloudBackupsClick = { showDeleteCloudConfirm = true }
                 )
             }
 
@@ -521,6 +578,7 @@ fun SavedInspectionsScreen(
                             }
                         },
                         onClick = { onSelectInspection(inspection.id) },
+                        onDuplicate = { onDuplicateInspection(inspection.id) },
                         onDelete = { itemToDelete = inspection }
                     )
                 }
@@ -538,7 +596,8 @@ private fun OptionalCloudBackupCard(
     onSignInClick: () -> Unit,
     onSignOutClick: () -> Unit,
     onBackupClick: () -> Unit,
-    onRestoreClick: () -> Unit
+    onRestoreClick: () -> Unit,
+    onDeleteCloudBackupsClick: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier
@@ -700,6 +759,21 @@ private fun OptionalCloudBackupCard(
                     }
 
                     IconButton(
+                        onClick = onDeleteCloudBackupsClick,
+                        enabled = !isCloudSyncing,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .testTag("cloud_delete_all_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "Delete Cloud Backups",
+                            tint = StatusErrorRed.copy(alpha = 0.85f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(
                         onClick = onSignOutClick,
                         enabled = !isCloudSyncing,
                         modifier = Modifier
@@ -726,9 +800,10 @@ fun SavedInspectionDetailedCard(
     language: AppLanguage,
     isSelectedForCompare: Boolean = false,
     onToggleCompare: () -> Unit = {},
-    onClick: () -> Unit,
+    onDuplicate: () -> Unit = {},
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
     val dateFormatted = remember(inspection.updatedAt) { dateFormat.format(Date(inspection.updatedAt)) }
@@ -938,8 +1013,24 @@ fun SavedInspectionDetailedCard(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
+                        onClick = onDuplicate,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("duplicate_inspection_${inspection.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Duplicate",
+                            tint = Slate600,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    IconButton(
                         onClick = onDelete,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("delete_inspection_${inspection.id}")
                     ) {
                         Icon(
                             imageVector = Icons.Default.DeleteOutline,

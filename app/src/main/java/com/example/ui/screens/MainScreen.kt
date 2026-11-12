@@ -447,6 +447,11 @@ fun MainScreen(
                                 scope.launch { snackbarHostState.showSnackbar(msg) }
                             }
                         },
+                        onDeleteAllCloudBackups = {
+                            viewModel.deleteAllCloudBackups { _, msg ->
+                                scope.launch { snackbarHostState.showSnackbar(msg) }
+                            }
+                        },
                         onSeedComparisonDemo = {
                             viewModel.seedSampleComparisonInspections {
                                 scope.launch {
@@ -467,6 +472,18 @@ fun MainScreen(
                         },
                         onSelectInspection = { id ->
                             viewModel.openInspectionOrReport(id)
+                        },
+                        onDuplicateInspection = { id ->
+                            viewModel.duplicateInspection(id) {
+                                scope.launch {
+                                    val message = when (currentLanguage) {
+                                        AppLanguage.AR -> "تم نسخ الفحص بنجاح"
+                                        AppLanguage.FR -> "Inspection dupliquée avec succès"
+                                        AppLanguage.EN -> "Inspection duplicated"
+                                    }
+                                    snackbarHostState.showSnackbar(message)
+                                }
+                            }
                         },
                         onDeleteInspection = { id ->
                             viewModel.deleteInspection(id)

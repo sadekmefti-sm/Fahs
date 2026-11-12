@@ -160,4 +160,43 @@ class ExampleRobolectricTest {
     assertTrue(msgFr.contains("Karim"))
     assertTrue(bundled.buildWhatsAppUri(msgFr).startsWith("https://wa.me/971524830059?text="))
   }
+
+  @Test
+  fun `verify phase 7 cloud backup entity round trip and incomplete score preservation`() {
+    val cloudBackup = com.example.data.repository.CloudInspectionBackup(
+      id = "insp_10",
+      userId = "uid_123",
+      localId = 10L,
+      carBrand = "Dacia",
+      carModel = "Duster",
+      carGeneration = "Duster II",
+      carYear = 2021L,
+      odometerKm = 68000L,
+      fuelType = "DIESEL",
+      gearboxType = "MANUELLE",
+      engineDescription = "1.5 dCi 110ch",
+      hasTurbo = true,
+      isFourWheelDrive = true,
+      bodyType = "SUV",
+      vin = "UU1HJD20561928374",
+      plateNumber = "12940 121 16",
+      inspectionMode = "FULL",
+      status = "IN_PROGRESS",
+      overallScore = -1L,
+      verdict = "INCOMPLETE",
+      totalEstimatedCostDzd = 0L,
+      problemCount = 0L,
+      answeredQuestions = 8L,
+      totalQuestions = 35L,
+      notes = "En cours"
+    )
+    val localEntity = cloudBackup.toLocalEntity()
+    assertEquals("Dacia", localEntity.carBrand)
+    assertEquals("Duster", localEntity.carModel)
+    assertEquals(null, localEntity.overallScore)
+    assertEquals(null, localEntity.verdict)
+    assertTrue(localEntity.hasTurbo)
+    assertTrue(localEntity.isFourWheelDrive)
+    assertEquals("SUV", localEntity.bodyType)
+  }
 }

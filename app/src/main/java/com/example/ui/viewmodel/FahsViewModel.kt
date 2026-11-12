@@ -736,6 +736,71 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun duplicateInspection(id: Long, onDuplicated: (Long) -> Unit = {}) {
+        viewModelScope.launch {
+            val original = repository.getInspection(id) ?: return@launch
+            val existingAnswers = allAnswersByInspectionId.value[id].orEmpty()
+            val now = System.currentTimeMillis()
+            val duplicatedEntity = original.copy(
+                id = 0L,
+                plateNumber = if (original.plateNumber.isNotBlank()) "${original.plateNumber} (Copie)" else "",
+                status = "IN_PROGRESS",
+                createdAt = now,
+                updatedAt = now
+            )
+            val newId = repository.insertInspection(duplicatedEntity)
+            if (existingAnswers.isNotEmpty()) {
+                val copiedAnswers = existingAnswers.map { ans ->
+                    ans.copy(
+                        id = 0L,
+                        inspectionId = newId,
+                        timestamp = now
+                    )
+                }
+                repository.saveAnswers(copiedAnswers)
+            }
+            onDuplicated(newId)
+        }
+    }
+
+    fun deleteAllCloudBackups(onResult: (Boolean, String) -> Unit) {
+        val currentUser = runCatching { FirebaseAuth.getInstance().currentUser }.getOrNull()
+        val lang = _currentLanguage.value
+        if (currentUser == null) {
+            val msg = when (lang) {
+                AppLanguage.AR -> "يرجى تسجيل الدخول بحساب Google أولاً"
+                AppLanguage.FR -> "Veuillez d'abord vous connecter avec Google."
+                AppLanguage.EN -> "Please sign in with Google first."
+            }
+            onResult(false, msg)
+            return
+        }
+
+        viewModelScope.launch {
+            _isCloudSyncing.value = true
+            val res = cloudBackupRepository.deleteAllBackupsForCurrentUser()
+            _isCloudSyncing.value = false
+            res.fold(
+                onSuccess = { count ->
+                    val msg = when (lang) {
+                        AppLanguage.AR -> "تم حذف جميع النسخ الاحتياطية السحابية ($count) نهائياً"
+                        AppLanguage.FR -> "Toutes vos sauvegardes Cloud ($count) ont été supprimées définitivement"
+                        AppLanguage.EN -> "Permanently deleted all Cloud backups ($count)"
+                    }
+                    onResult(true, msg)
+                },
+                onFailure = { err ->
+                    val msg = when (lang) {
+                        AppLanguage.AR -> "تعذر حذف النسخ السحابية: ${err.localizedMessage ?: ""}"
+                        AppLanguage.FR -> "Échec de suppression Cloud : ${err.localizedMessage ?: ""}"
+                        AppLanguage.EN -> "Failed to delete Cloud backups: ${err.localizedMessage ?: ""}"
+                    }
+                    onResult(false, msg)
+                }
+            )
+        }
+    }
+
     fun deleteInspection(id: Long) {
         viewModelScope.launch {
             repository.deleteInspection(id)
