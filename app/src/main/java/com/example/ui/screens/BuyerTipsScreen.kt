@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -13,16 +14,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
-import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Construction
@@ -61,30 +61,35 @@ import com.example.core.i18n.Strings
 import com.example.data.model.AlgerianCarCatalog
 import com.example.data.model.AlgerianCarCatalogExtra
 import com.example.data.model.ItemSeverity
+import com.example.data.repository.ShopSettings
 import com.example.domain.ObdDiagnosticEngine
-import com.example.domain.ReportEngine
-import com.example.ui.theme.Emerald100
-import com.example.ui.theme.Emerald700
-import com.example.ui.theme.Emerald800
-import com.example.ui.theme.Emerald900
-import com.example.ui.theme.Slate100
-import com.example.ui.theme.Slate200
-import com.example.ui.theme.Slate50
-import com.example.ui.theme.Slate600
-import com.example.ui.theme.Slate700
-import com.example.ui.theme.Slate800
-import com.example.ui.theme.Slate900
-import com.example.ui.theme.StatusErrorRed
-import com.example.ui.theme.StatusPassGreen
-import com.example.ui.theme.StatusWarningAmber
+import com.example.ui.components.DongleBuyingGuideContent
+import com.example.ui.components.DongleVectorIllustration
+import com.example.ui.components.ObdPortUnderSteeringVectorIllustration
+import com.example.ui.theme.FahsBrand
+import com.example.ui.theme.FahsBrandSoft
+import com.example.ui.theme.FahsHairline
+import com.example.ui.theme.FahsInk
+import com.example.ui.theme.FahsMutedText
+import com.example.ui.theme.ResultCheckOrange
+import com.example.ui.theme.ResultNormalGreen
+import com.example.ui.theme.ResultProblemRed
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BuyerTipsScreen(
     language: AppLanguage,
+    shopSettings: ShopSettings = ShopSettings(),
+    initialSection: String = "HOW_TO_USE_DONGLE",
     modifier: Modifier = Modifier
 ) {
-    var selectedSection by remember { mutableStateOf("TIPS") } // TIPS, DTC_DICTIONARY, WEAK_POINTS
+    // Sections in Guide tab:
+    // HOW_TO_USE_DONGLE (How to use a dongle & where the OBD port is)
+    // TIPS (Buyer tips)
+    // WEAK_POINTS (Model tips & OBD port location per car)
+    // ORDER_DONGLE (Order an OBD dongle)
+    // DTC_DICTIONARY (Offline fault code explanations)
+    var selectedSection by remember(initialSection) { mutableStateOf(initialSection) }
     var dtcSearchQuery by remember { mutableStateOf("") }
     var modelSearchQuery by remember { mutableStateOf("") }
 
@@ -113,66 +118,33 @@ fun BuyerTipsScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(Slate50),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .background(MaterialTheme.colorScheme.background)
+            .testTag("guide_screen"),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Header Banner with Total Content Stats
+        // Quiet Header
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Slate900)
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(Emerald700),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = Strings.buyerTipsTitle(language),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Text(
-                                text = when (language) {
-                                    AppLanguage.AR -> "${AlgerianCarCatalog.models.size} سيارة جزائرية • ${allDtcList.size} كود عطل OBD2 • 100% بدون إنترنت"
-                                    AppLanguage.FR -> "${AlgerianCarCatalog.models.size} modèles DZ • ${allDtcList.size} codes OBD2 • 100% Hors-ligne"
-                                    AppLanguage.EN -> "${AlgerianCarCatalog.models.size} DZ models • ${allDtcList.size} OBD2 codes • 100% Offline"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Emerald100
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = when (language) {
-                            AppLanguage.AR -> "موسوعة المشتري الجزائري: نصائح كشف التحايل، نقاط الضعف المعروفة لكل سيارة في السوق، وقاموس أكواد الأعطال OBD2 بالدارجة والعربية والفرنسية."
-                            AppLanguage.FR -> "Encyclopédie de l'acheteur en Algérie : conseils anti-fraude, points faibles par modèle et dictionnaire des codes défauts OBD2."
-                            AppLanguage.EN -> "Algerian Buyer's Encyclopedia: anti-fraud guide, model-specific weak points, and offline OBD2 fault code dictionary."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Slate200,
-                        lineHeight = 21.sp
-                    )
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = when (language) {
+                        AppLanguage.AR -> "دليل الفحص والشراء"
+                        AppLanguage.FR -> "Guide d'inspection et d'achat"
+                        AppLanguage.EN -> "Inspection and buying guide"
+                    },
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = when (language) {
+                        AppLanguage.AR -> "طريقة استعمال الفيشة، مكان منفذ OBD، نصائح الشراء وطلب الفيشة."
+                        AppLanguage.FR -> "Utiliser un boîtier, trouver la prise OBD, conseils d'achat et commande."
+                        AppLanguage.EN -> "How to use a dongle, where the OBD port is, buyer tips, and ordering."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FahsMutedText
+                )
             }
         }
 
@@ -185,19 +157,37 @@ fun BuyerTipsScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 FilterChip(
+                    selected = selectedSection == "HOW_TO_USE_DONGLE",
+                    onClick = { selectedSection = "HOW_TO_USE_DONGLE" },
+                    label = {
+                        Text(
+                            when (language) {
+                                AppLanguage.AR -> "استعمال الفيشة ومكان المنفذ"
+                                AppLanguage.FR -> "Utiliser le boîtier & prise OBD"
+                                AppLanguage.EN -> "How to use & OBD port"
+                            }
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = FahsBrand,
+                        selectedLabelColor = Color.White
+                    ),
+                    modifier = Modifier.testTag("guide_tab_how_to_use")
+                )
+                FilterChip(
                     selected = selectedSection == "TIPS",
                     onClick = { selectedSection = "TIPS" },
                     label = {
                         Text(
                             when (language) {
-                                AppLanguage.AR -> "نصائح الفحص (6)"
-                                AppLanguage.FR -> "Conseils (6)"
-                                AppLanguage.EN -> "Buyer Tips (6)"
+                                AppLanguage.AR -> "نصائح الشراء"
+                                AppLanguage.FR -> "Conseils d'achat"
+                                AppLanguage.EN -> "Buyer tips"
                             }
                         )
                     },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Emerald700,
+                        selectedContainerColor = FahsBrand,
                         selectedLabelColor = Color.White
                     ),
                     modifier = Modifier.testTag("guide_tab_tips")
@@ -208,17 +198,35 @@ fun BuyerTipsScreen(
                     label = {
                         Text(
                             when (language) {
-                                AppLanguage.AR -> "عيوب السيارات (${AlgerianCarCatalog.models.size})"
-                                AppLanguage.FR -> "Points faibles (${AlgerianCarCatalog.models.size})"
-                                AppLanguage.EN -> "Weak Points (${AlgerianCarCatalog.models.size})"
+                                AppLanguage.AR -> "نصائح حسب السيارة (${AlgerianCarCatalog.models.size})"
+                                AppLanguage.FR -> "Modèles & prises (${AlgerianCarCatalog.models.size})"
+                                AppLanguage.EN -> "Cars & OBD ports (${AlgerianCarCatalog.models.size})"
                             }
                         )
                     },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Emerald700,
+                        selectedContainerColor = FahsBrand,
                         selectedLabelColor = Color.White
                     ),
                     modifier = Modifier.testTag("guide_tab_weak_points")
+                )
+                FilterChip(
+                    selected = selectedSection == "ORDER_DONGLE",
+                    onClick = { selectedSection = "ORDER_DONGLE" },
+                    label = {
+                        Text(
+                            when (language) {
+                                AppLanguage.AR -> "طلب فيشة OBD"
+                                AppLanguage.FR -> "Commander un boîtier"
+                                AppLanguage.EN -> "Order a dongle"
+                            }
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = FahsBrand,
+                        selectedLabelColor = Color.White
+                    ),
+                    modifier = Modifier.testTag("guide_tab_order_dongle")
                 )
                 FilterChip(
                     selected = selectedSection == "DTC_DICTIONARY",
@@ -226,14 +234,14 @@ fun BuyerTipsScreen(
                     label = {
                         Text(
                             when (language) {
-                                AppLanguage.AR -> "أكواد OBD2 (${allDtcList.size})"
-                                AppLanguage.FR -> "Codes OBD2 (${allDtcList.size})"
-                                AppLanguage.EN -> "OBD2 Codes (${allDtcList.size})"
+                                AppLanguage.AR -> "شرح الأعطال (${allDtcList.size})"
+                                AppLanguage.FR -> "Défauts moteur (${allDtcList.size})"
+                                AppLanguage.EN -> "Fault dictionary (${allDtcList.size})"
                             }
                         )
                     },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Emerald700,
+                        selectedContainerColor = FahsBrand,
                         selectedLabelColor = Color.White
                     ),
                     modifier = Modifier.testTag("guide_tab_dtc_dict")
@@ -242,6 +250,93 @@ fun BuyerTipsScreen(
         }
 
         when (selectedSection) {
+            "HOW_TO_USE_DONGLE" -> {
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, FahsHairline)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                ObdPortUnderSteeringVectorIllustration(size = 76.dp)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "أين أجد منفذ الفحص في السيارة؟"
+                                            AppLanguage.FR -> "Où se trouve la prise dans la voiture ?"
+                                            AppLanguage.EN -> "Where is the port in the car?"
+                                        },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "في أغلب السيارات، يوجد المنفذ تحت المقود بالقرب من الدواسات، أو خلف غطاء بلاستيكي صغير بجانب علبة الفيوزات أو منفضة السجائر."
+                                            AppLanguage.FR -> "Sur la plupart des voitures, la prise se trouve sous le volant près des pédales, ou derrière un petit cache près des fusibles ou de la console centrale."
+                                            AppLanguage.EN -> "On most cars, the port is under the steering wheel near the pedals, or behind a small plastic cover near the fuse box or center console."
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = FahsMutedText
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider(color = FahsHairline, thickness = 1.dp)
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                DongleVectorIllustration(size = 72.dp, isConnected = true)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "الخطوات الثلاث للفحص الأوتوماتيكي"
+                                            AppLanguage.FR -> "Les 3 étapes pour lancer le scan"
+                                            AppLanguage.EN -> "The 3 steps to run the scan"
+                                        },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "1. أدخل الفيشة في منفذ السيارة.\n2. افتح الكونتاكت وشغّل المحرك.\n3. اضغط على «فحص أوتوماتيكي» في الصفحة الرئيسية."
+                                            AppLanguage.FR -> "1. Branchez le boîtier sur la prise sous le volant.\n2. Mettez le contact et démarrez le moteur.\n3. Appuyez sur « Scan automatique » sur l'écran d'accueil."
+                                            AppLanguage.EN -> "1. Plug the dongle into the port under the steering wheel.\n2. Turn the key and start the engine.\n3. Tap 'Automatic scan' on the Home screen."
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            "ORDER_DONGLE" -> {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        DongleBuyingGuideContent(
+                            language = language,
+                            shopSettings = shopSettings
+                        )
+                    }
+                }
+            }
+
             "WEAK_POINTS" -> {
                 item {
                     OutlinedTextField(
@@ -263,23 +358,23 @@ fun BuyerTipsScreen(
                             Icon(imageVector = Icons.Default.Search, contentDescription = null)
                         },
                         singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = Color.White,
                             unfocusedContainerColor = Color.White,
-                            focusedBorderColor = Emerald700,
-                            unfocusedBorderColor = Slate200
+                            focusedBorderColor = FahsBrand,
+                            unfocusedBorderColor = FahsHairline
                         )
                     )
                 }
 
                 items(filteredModels.size) { index ->
                     val car = filteredModels[index]
-                    Card(
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, FahsHairline)
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
@@ -294,7 +389,7 @@ fun BuyerTipsScreen(
                                     Icon(
                                         imageVector = Icons.Default.DirectionsCar,
                                         contentDescription = null,
-                                        tint = Emerald700,
+                                        tint = FahsBrand,
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -302,20 +397,20 @@ fun BuyerTipsScreen(
                                         text = "${car.brand} ${car.model}",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = Slate900,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = Emerald100
+                                    color = FahsBrandSoft
                                 ) {
                                     Text(
                                         text = car.commonEngines.firstOrNull() ?: "",
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = Emerald900,
+                                        color = FahsInk,
                                         maxLines = 1,
                                         softWrap = false,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -325,31 +420,25 @@ fun BuyerTipsScreen(
 
                             Text(
                                 text = when (language) {
-                                    AppLanguage.AR -> "نقطة الضعف الرئيسية: ${car.keyWeakPointAr}"
-                                    AppLanguage.FR -> "Point faible principal : ${car.keyWeakPointFr}"
-                                    AppLanguage.EN -> "Key Weak Point: ${car.keyWeakPointEn}"
+                                    AppLanguage.AR -> "نقطة المراقبة الرئيسية: ${car.keyWeakPointAr}"
+                                    AppLanguage.FR -> "Point à surveiller : ${car.keyWeakPointFr}"
+                                    AppLanguage.EN -> "Main point to check: ${car.keyWeakPointEn}"
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Slate800,
-                                fontWeight = FontWeight.Medium
+                                color = MaterialTheme.colorScheme.onSurface
                             )
 
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Slate100,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = when (language) {
-                                        AppLanguage.AR -> "مكان فيشة OBD2: ${car.obdPortHintAr}"
-                                        AppLanguage.FR -> "Prise OBD2 : ${car.obdPortHintFr}"
-                                        AppLanguage.EN -> "OBD2 Port: ${car.obdPortHintEn}"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Slate700,
-                                    modifier = Modifier.padding(10.dp)
-                                )
-                            }
+                            HorizontalDivider(color = FahsHairline, thickness = 1.dp)
+
+                            Text(
+                                text = when (language) {
+                                    AppLanguage.AR -> "مكان منفذ الفحص: ${car.obdPortHintAr}"
+                                    AppLanguage.FR -> "Emplacement prise OBD : ${car.obdPortHintFr}"
+                                    AppLanguage.EN -> "OBD port location: ${car.obdPortHintEn}"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = FahsMutedText
+                            )
                         }
                     }
                 }
@@ -366,9 +455,9 @@ fun BuyerTipsScreen(
                         placeholder = {
                             Text(
                                 when (language) {
-                                    AppLanguage.AR -> "ابحث عن كود عطل (مثال: P0299, P0087, P0420, تيربو، حاقن...)"
-                                    AppLanguage.FR -> "Rechercher un code (ex: P0299, P0087, P0420, turbo, injecteur...)"
-                                    AppLanguage.EN -> "Search fault code (e.g., P0299, P0087, P0420, turbo, injector...)"
+                                    AppLanguage.AR -> "ابحث عن عطل (مثال: تيربو، حاقن، P0420...)"
+                                    AppLanguage.FR -> "Rechercher un défaut (ex: turbo, injecteur, P0420...)"
+                                    AppLanguage.EN -> "Search fault (e.g., turbo, injector, P0420...)"
                                 }
                             )
                         },
@@ -376,12 +465,12 @@ fun BuyerTipsScreen(
                             Icon(imageVector = Icons.Default.Search, contentDescription = null)
                         },
                         singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = Color.White,
                             unfocusedContainerColor = Color.White,
-                            focusedBorderColor = Emerald700,
-                            unfocusedBorderColor = Slate200
+                            focusedBorderColor = FahsBrand,
+                            unfocusedBorderColor = FahsHairline
                         )
                     )
                 }
@@ -389,52 +478,34 @@ fun BuyerTipsScreen(
                 items(filteredDtcList.size) { index ->
                     val dtc = filteredDtcList[index]
                     val badgeColor = when (dtc.severity) {
-                        ItemSeverity.CRITICAL -> StatusErrorRed
-                        ItemSeverity.IMPORTANT -> StatusWarningAmber
-                        ItemSeverity.MINOR -> StatusPassGreen
+                        ItemSeverity.CRITICAL -> ResultProblemRed
+                        ItemSeverity.IMPORTANT -> ResultCheckOrange
+                        ItemSeverity.MINOR -> ResultNormalGreen
                     }
-                    Card(
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, FahsHairline)
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
                                     color = badgeColor.copy(alpha = 0.14f)
                                 ) {
                                     Text(
-                                        text = "${dtc.code} • ${dtc.severity.getLabel(language)}",
+                                        text = "${dtc.code} · ${dtc.severity.getLabel(language)}",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = badgeColor,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                                    )
-                                }
-
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Slate100
-                                ) {
-                                    Text(
-                                        text = dtc.verificationStatus.getLabel(language),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Slate700,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                     )
                                 }
                             }
@@ -443,14 +514,13 @@ fun BuyerTipsScreen(
                                 text = dtc.getTitle(language),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Slate900
+                                color = MaterialTheme.colorScheme.onSurface
                             )
 
                             Text(
                                 text = dtc.getExplanation(language),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Slate700,
-                                lineHeight = 19.sp
+                                color = FahsMutedText
                             )
                         }
                     }
@@ -458,108 +528,102 @@ fun BuyerTipsScreen(
             }
 
             else -> {
-                // Tip 1: Carte Grise & VIN
                 item {
                     BuyerTipCard(
                         icon = Icons.AutoMirrored.Filled.Assignment,
-                        iconColor = Emerald700,
+                        iconColor = FahsBrand,
                         title = Strings.tip1Title(language),
                         content = Strings.tip1Desc(language),
                         actionNotice = when (language) {
-                            AppLanguage.AR -> "تنبيه: لا تدفع عربوناً أبداً إذا كانت البطاقة الرمادية مؤقتة (Carte provisoire) أو باسم شخص غير حاضر بدون وكالة موثقة."
-                            AppLanguage.FR -> "Alerte : Ne versez jamais d'acompte si la carte est provisoire ou au nom d'un tiers sans procuration notariée valide."
-                            AppLanguage.EN -> "Alert: Never pay a deposit if the carte grise is temporary or in someone else's name without a notarized power of attorney."
+                            AppLanguage.AR -> "تنبيه: لا تدفع عربوناً أبداً إذا كانت البطاقة الرمادية مؤقتة أو باسم شخص غير حاضر بدون وكالة موثقة."
+                            AppLanguage.FR -> "Conseil : Ne versez jamais d'acompte si la carte grise est provisoire ou au nom d'un tiers sans procuration notariée."
+                            AppLanguage.EN -> "Tip: Never pay a deposit if the registration card is temporary or in someone else's name without a notarized power of attorney."
                         }
                     )
                 }
 
-                // Tip 2: Cold Engine Start
                 item {
                     BuyerTipCard(
                         icon = Icons.Default.Speed,
-                        iconColor = StatusWarningAmber,
+                        iconColor = ResultCheckOrange,
                         title = Strings.tip2Title(language),
                         content = Strings.tip2Desc(language),
                         actionNotice = when (language) {
-                            AppLanguage.AR -> "لاحظ لون الدخان: أبيض كثيف (حرق ماء التبريد)، أزرق (حرق زيت المحرك)، أسود كثيف (خلل في حاقنات الوقود Injecteurs)."
-                            AppLanguage.FR -> "Observez la fumée : blanche dense (joint de culasse), bleue (consommation d'huile), noire (injecteurs encrassés/défaillants)."
-                            AppLanguage.EN -> "Watch smoke color: thick white (coolant/head gasket), blue (burning engine oil), black (faulty injectors/air mix)."
+                            AppLanguage.AR -> "لاحظ لون الدخان: أبيض كثيف (ماء التبريد)، أزرق (حرق زيت المحرك)، أسود كثيف (نظام الوقود)."
+                            AppLanguage.FR -> "Observez la fumée : blanche épaisse (liquide de refroidissement), bleue (huile brûlée), noire (injection)."
+                            AppLanguage.EN -> "Watch the exhaust smoke: thick white (coolant), blue (burning oil), black (fuel injection)."
                         }
                     )
                 }
 
-                // Tip 3: Erased Codes
                 item {
                     BuyerTipCard(
                         icon = Icons.Default.Build,
-                        iconColor = StatusErrorRed,
+                        iconColor = ResultProblemRed,
                         title = Strings.tip3Title(language),
                         content = Strings.tip3Desc(language),
                         actionNotice = when (language) {
-                            AppLanguage.AR -> "عند فتح الكونتاكت، يجب أن تضيء لمبة Check Engine ولمبة الزيت والبطارية. إذا كانت لمبة المحرك لا تضيء أبداً، فقد تكون منزوعة عمداً."
-                            AppLanguage.FR -> "Au contact, le voyant moteur orange DOIT s'allumer avec la batterie. S'il ne s'allume jamais, l'ampoule a peut-être été neutralisée."
-                            AppLanguage.EN -> "At ignition ON, the orange Check Engine light MUST illuminate. If it never turns on, the bulb may have been removed."
+                            AppLanguage.AR -> "عند فتح الكونتاكت، يجب أن تضيء لمبة المحرك ثم تنطفئ بعد التشغيل. إذا لم تضئ أبداً فقد تكون معطلة عمداً."
+                            AppLanguage.FR -> "Au contact, le voyant moteur doit s'allumer puis s'éteindre une fois le moteur démarré."
+                            AppLanguage.EN -> "When turning the key on, the engine warning light must light up and then turn off once started."
                         }
                     )
                 }
 
-                // Tip 4: Moudjahid Licence
                 item {
                     BuyerTipCard(
                         icon = Icons.Default.Block,
-                        iconColor = StatusWarningAmber,
+                        iconColor = ResultCheckOrange,
                         title = Strings.tip4Title(language),
                         content = Strings.tip4Desc(language),
                         actionNotice = when (language) {
-                            AppLanguage.AR -> "تأكد من شرط 3 أو 5 سنوات، ووجود شهادة رفع اليد من مديرية المجاهدين لتفادي حجز السيارة أو رفض نقل الملكية."
-                            AppLanguage.FR -> "Vérifiez l'échéance légale (3 ou 5 ans) et l'existence de la mainlevée officielle délivrée par la direction des Moudjahidine."
-                            AppLanguage.EN -> "Verify the legal holding period (3 or 5 years) and the official release certificate from the Moudjahidine administration."
+                            AppLanguage.AR -> "تأكد من انتهاء مدة التجميد القانونية ووجود شهادة رفع اليد الرسمية."
+                            AppLanguage.FR -> "Vérifiez l'échéance légale et la mainlevée officielle avant tout engagement."
+                            AppLanguage.EN -> "Verify the legal holding period and official release certificate before committing."
                         }
                     )
                 }
 
-                // Tip 5: GPL / Sirghaz
                 item {
                     BuyerTipCard(
                         icon = Icons.Default.LocalGasStation,
-                        iconColor = Emerald700,
+                        iconColor = FahsBrand,
                         title = when (language) {
                             AppLanguage.AR -> "فحص خزان ونظام سيرغاز (GPL)"
                             AppLanguage.FR -> "Vérification de l'installation Sirghaz (GPL)"
-                            AppLanguage.EN -> "GPL / LPG System Inspection"
+                            AppLanguage.EN -> "LPG / Sirghaz system check"
                         },
                         content = when (language) {
-                            AppLanguage.AR -> "السيارات المحولة للغاز شائعة جداً في الجزائر. تأكد من تاريخ صلاحية خزان الغاز (10 سنوات كحد أقصى) وتدوين عبارة (ES/GPL) على البطاقة الرمادية."
-                            AppLanguage.FR -> "Les voitures équipées au GPL sont très courantes. Contrôlez la date limite du réservoir (max 10 ans) et la mention ES/GPL sur la carte grise."
-                            AppLanguage.EN -> "LPG converted cars are very common in Algeria. Check the tank expiry date (max 10 years) and ES/GPL mention on the carte grise."
+                            AppLanguage.AR -> "تأكد من تاريخ صلاحية خزان الغاز (10 سنوات كحد أقصى) وتدوين عبارة الغاز على البطاقة الرمادية."
+                            AppLanguage.FR -> "Contrôlez la date d'épreuve du réservoir (maximum 10 ans) et la mention GPL sur la carte grise."
+                            AppLanguage.EN -> "Check the tank test date (max 10 years) and LPG mention on the registration card."
                         },
                         actionNotice = when (language) {
-                            AppLanguage.AR -> "رائحة الغاز القوية عند تشغيل المحرك دليل على تسريب خطير في الأنابيب أو المبخر (Vapodétendeur)."
-                            AppLanguage.FR -> "Une forte odeur de gaz au démarrage indique une fuite dangereuse sur les raccords ou le vapodétendeur."
-                            AppLanguage.EN -> "A strong gas smell at start indicates a hazardous leak in lines or the vaporizer/regulator."
+                            AppLanguage.AR -> "رائحة الغاز القوية عند تشغيل المحرك تستوجب فحص الأنابيب والمبخر فوراً."
+                            AppLanguage.FR -> "Une odeur de gaz au démarrage nécessite un contrôle immédiat de l'installation."
+                            AppLanguage.EN -> "Any gas smell at startup requires an immediate check of the lines and regulator."
                         }
                     )
                 }
 
-                // Tip 6: Longeron & Chassis Repairs
                 item {
                     BuyerTipCard(
                         icon = Icons.Default.Construction,
-                        iconColor = StatusErrorRed,
+                        iconColor = ResultProblemRed,
                         title = when (language) {
-                            AppLanguage.AR -> "فحص الشاسيه واللونجرون (Longeron)"
-                            AppLanguage.FR -> "Contrôle des longerons et du marbre"
-                            AppLanguage.EN -> "Chassis legs & collision signs"
+                            AppLanguage.AR -> "فحص الشاسيه والأعمدة الأمامية"
+                            AppLanguage.FR -> "Contrôle des longerons sous le capot"
+                            AppLanguage.EN -> "Checking the front chassis legs"
                         },
                         content = when (language) {
-                            AppLanguage.AR -> "انظر تحت غطاء المحرك إلى أعمدة الشاسيه الأمامية (اللونجرون). ابحث عن آثار لحام غير أصلية، اعوجاج، أو صمغ سيليكون (Mastic) تم وضعه حديثاً لإخفاء حادث اصطدام سابق."
-                            AppLanguage.FR -> "Inspectez les longerons avant sous le capot. Cherchez des soudures non d'origine, des plis, ou du mastic récent masquant un choc frontal."
-                            AppLanguage.EN -> "Inspect the front chassis legs under the bonnet. Look for non-factory welding, creases, or fresh sealant applied to conceal a crash."
+                            AppLanguage.AR -> "انظر تحت غطاء المحرك إلى أعمدة الشاسيه الأمامية وابحث عن أي آثار لحام أو اعوجاج أو معجون حديث."
+                            AppLanguage.FR -> "Inspectez les longerons avant sous le capot à la recherche de soudures, plis ou mastic récent."
+                            AppLanguage.EN -> "Inspect the front frame rails under the bonnet for welds, creases, or fresh filler."
                         },
                         actionNotice = when (language) {
-                            AppLanguage.AR -> "أي اعوجاج في اللونجرون أو ضربة في الشاسيه تستدعي التراجع الفوري عن الشراء."
-                            AppLanguage.FR -> "Tout longeron touché ou redressé au marbre doit vous inciter à renoncer à l'achat."
-                            AppLanguage.EN -> "Any damaged or re-welded chassis leg is a major safety defect: walk away from the purchase."
+                            AppLanguage.AR -> "الفحص الأوتوماتيكي بالفيشة لا يرى الحوادث أو الصدأ؛ افحص الهيكل دائماً بعينك."
+                            AppLanguage.FR -> "Le scan automatique ne voit ni la carrosserie ni les chocs : vérifiez toujours visuellement."
+                            AppLanguage.EN -> "An automatic scan cannot see bodywork or crash repairs: always inspect visually."
                         }
                     )
                 }
@@ -577,11 +641,11 @@ fun BuyerTipCard(
     actionNotice: String,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, FahsHairline)
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -604,7 +668,7 @@ fun BuyerTipCard(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Slate900
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
@@ -613,26 +677,21 @@ fun BuyerTipCard(
             Text(
                 text = content,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Slate700,
-                lineHeight = 22.sp
+                color = FahsMutedText
             )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                color = Slate100
-            ) {
-                Text(
-                    text = actionNotice,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium,
-                    color = Slate800,
-                    modifier = Modifier.padding(12.dp),
-                    lineHeight = 18.sp
-                )
-            }
+            HorizontalDivider(color = FahsHairline, thickness = 1.dp)
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = actionNotice,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }

@@ -99,6 +99,8 @@ fun ObdGuideScreen(
     shopSettings: com.example.data.repository.ShopSettings = com.example.data.repository.ShopSettings(),
     onOpenDongleBuyingGuide: () -> Unit = {},
     isDeveloperModeEnabled: Boolean = false,
+    onAddCarModelForTips: (() -> Unit)? = null,
+    onDetectedEcuVin: (String?) -> Unit = {},
     onSaveScanToInspection: (ObdScanResult, Boolean, EcuVinComparisonChoice) -> Unit = { _, _, _ -> },
     onConfirmTestDriveSummary: (com.example.domain.TestDriveMonitoringSummary) -> Unit = {},
     modifier: Modifier = Modifier
@@ -165,12 +167,14 @@ fun ObdGuideScreen(
                 rememberedDongleAddress = address
                 rememberedDongleName = name
 
-                currentScanResult = ObdDiagnosticEngine.executeRealObdScan(
+                val scanRes = ObdDiagnosticEngine.executeRealObdScan(
                     transport = transport,
                     expectedVin = expectedVin,
                     language = language,
                     onProgress = { step -> btStatusMessage = step }
                 )
+                currentScanResult = scanRes
+                onDetectedEcuVin(scanRes.ecuVin)
                 transport.disconnect()
                 btStatusMessage = when (language) {
                     AppLanguage.AR -> "اكتمل الفحص عبر البلوتوث بنجاح ✓ (تم تذكر الجهاز للاتصال التلقائي)"
@@ -1178,6 +1182,37 @@ fun ObdGuideScreen(
                                 }
                             }
                         )
+
+                        if (onAddCarModelForTips != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedButton(
+                                onClick = onAddCarModelForTips,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp)
+                                    .testTag("add_car_model_after_scan_btn"),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.5.dp, Emerald700)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DirectionsCar,
+                                    contentDescription = null,
+                                    tint = Emerald800,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = when (language) {
+                                        AppLanguage.AR -> "أضف موديل السيارة للحصول على النصائح الخاصة بها"
+                                        AppLanguage.FR -> "Ajouter le modèle de la voiture pour obtenir les conseils adaptés"
+                                        AppLanguage.EN -> "Add the car model to get tips specific to it"
+                                    },
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Emerald800
+                                )
+                            }
+                        }
                     }
                 }
             }

@@ -105,23 +105,43 @@ class FahsAppRobolectricTest {
   }
 
   @Test
-  fun `launch MainActivity and navigate tabs without crashing`() {
+  fun `launch MainActivity and navigate Part 1 start flow and 4 bottom tabs without crashing`() {
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("first_launch_welcome_card").assertExists()
-    composeTestRule.onNodeWithTag("top_bar_info_button").performClick()
-    composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("onboarding_release_dialog").assertExists()
-    composeTestRule.onNodeWithTag("onboarding_tab_dongle").performClick()
-    composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("dongle_shop_order_card").assertExists()
-    composeTestRule.onNodeWithTag("delivery_mode_home").performClick()
-    composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("onboarding_tab_privacy").performClick()
-    composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("finish_onboarding_btn").performClick()
-    composeTestRule.waitForIdle()
+    // 1. Verify Home screen shows the single main question, optional car link, Automatic Scan, and Manual Inspection
+    composeTestRule.onNodeWithTag("home_main_question").assertExists()
+    composeTestRule.onNodeWithTag("choose_car_optional_link").assertExists()
+    composeTestRule.onNodeWithTag("automatic_scan_button").assertExists()
     composeTestRule.onNodeWithTag("start_inspection_button").assertExists()
-    composeTestRule.onNodeWithTag("start_inspection_button").performClick()
+
+    // 2. Tap Automatic Scan when no dongle is remembered -> asks "Do you have an OBD dongle?"
+    composeTestRule.onNodeWithTag("automatic_scan_button").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("ask_has_dongle_title").assertExists()
+    composeTestRule.onNodeWithTag("has_dongle_yes_btn").assertExists()
+    composeTestRule.onNodeWithTag("has_dongle_no_btn").performClick()
+    composeTestRule.waitForIdle()
+
+    // 3. Tapping No -> asks "Would you like to get one?" with "Yes, show me" and "Not now"
+    composeTestRule.onNodeWithTag("offer_get_dongle_title").assertExists()
+    composeTestRule.onNodeWithTag("offer_dongle_yes_show_me_btn").assertExists()
+    composeTestRule.onNodeWithTag("offer_dongle_not_now_btn").performClick()
+    composeTestRule.waitForIdle()
+
+    // 4. Tapping Not now -> shows "No problem, you can inspect the car manually" and manual mode options
+    composeTestRule.onNodeWithTag("no_problem_manual_reassurance_banner").assertExists()
+    composeTestRule.onNodeWithTag("start_quick_manual_btn").assertExists()
+    composeTestRule.onNodeWithTag("start_full_manual_btn").assertExists()
+
+    // 5. Verify the 4 bottom bar tabs: Home | My reports | Guide | Account
+    composeTestRule.onNodeWithTag("bottom_tab_reports").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("bottom_tab_guide").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("guide_screen").assertExists()
+    composeTestRule.onNodeWithTag("bottom_tab_account").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("account_screen").assertExists()
+    composeTestRule.onNodeWithTag("bottom_tab_home").performClick()
     composeTestRule.waitForIdle()
   }
 
@@ -427,28 +447,29 @@ class FahsAppRobolectricTest {
   }
 
   @Test
-  fun `verify phase 9 arabic rtl screens sample pdf preview and fast startup`() {
+  fun `verify phase 9 arabic rtl screens wmi brand detection and fast startup`() {
     val startMs = System.currentTimeMillis()
     composeTestRule.waitForIdle()
     val startupElapsedMs = System.currentTimeMillis() - startMs
     assertTrue("Startup and initial composition should stay fast (< 3000 ms), took ${startupElapsedMs}ms", startupElapsedMs < 3000L)
 
-    // Open onboarding dialog, switch to Privacy & Release tab, and close (which also dismisses welcome card)
-    composeTestRule.onNodeWithTag("top_bar_info_button").performClick()
-    composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("onboarding_release_dialog").assertExists()
-    composeTestRule.onNodeWithTag("onboarding_tab_privacy").performClick()
-    composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("privacy_version_card").assertExists()
-    composeTestRule.onNodeWithTag("finish_onboarding_btn").performClick()
-    composeTestRule.waitForIdle()
+    // Verify WMI 3-character VIN prefix brand detection for common Algerian cars
+    assertEquals("Renault", com.example.domain.VinWmiHelper.detectBrandFromVin("VF14SRB04K0519283"))
+    assertEquals("Dacia", com.example.domain.VinWmiHelper.detectBrandFromVin("UU1HJD20561928374"))
+    assertEquals("Peugeot", com.example.domain.VinWmiHelper.detectBrandFromVin("VF3CC8HR0JW049281"))
+    assertEquals("Volkswagen", com.example.domain.VinWmiHelper.detectBrandFromVin("WVWZZZAUZJW102938"))
+    assertEquals("Seat", com.example.domain.VinWmiHelper.detectBrandFromVin("VSSZZZ6JZGR019283"))
+    assertEquals("Hyundai", com.example.domain.VinWmiHelper.detectBrandFromVin("KMHCT41B8FU192837"))
+    assertEquals("Kia", com.example.domain.VinWmiHelper.detectBrandFromVin("KNAB2511BJT192837"))
+    assertEquals("Toyota", com.example.domain.VinWmiHelper.detectBrandFromVin("AHTFR22G706019283"))
 
-    // Verify Sample PDF Showcase Card exists on HomeScreen and opens the Arabic RTL Sample PDF Preview Dialog
-    composeTestRule.onNodeWithTag("sample_pdf_reports_card").assertExists()
-    composeTestRule.onNodeWithTag("open_sample_pdf_ar_btn").performClick()
+    // Switch language to Arabic in Account tab and verify RTL layout
+    composeTestRule.onNodeWithTag("bottom_tab_account").performClick()
     composeTestRule.waitForIdle()
-    composeTestRule.onNodeWithTag("sample_pdf_preview_dialog").assertExists()
-    composeTestRule.onNodeWithTag("close_sample_pdf_dialog_btn").performClick()
+    composeTestRule.onNodeWithTag("account_lang_ar").performClick()
     composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("bottom_tab_home").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("home_main_question").assertExists()
   }
 }

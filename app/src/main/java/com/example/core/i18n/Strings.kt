@@ -13,7 +13,7 @@ object Strings {
         AppLanguage.EN -> "Used car inspection assistant in Algeria"
     }
 
-    // Navigation
+    // Navigation (4 bottom tabs: Home | My reports | Guide | Account)
     fun navHome(lang: AppLanguage): String = when (lang) {
         AppLanguage.AR -> "الرئيسية"
         AppLanguage.FR -> "Accueil"
@@ -21,21 +21,27 @@ object Strings {
     }
 
     fun navInspections(lang: AppLanguage): String = when (lang) {
-        AppLanguage.AR -> "الفحوصات"
-        AppLanguage.FR -> "Inspections"
-        AppLanguage.EN -> "Inspections"
+        AppLanguage.AR -> "تقاريري"
+        AppLanguage.FR -> "Mes rapports"
+        AppLanguage.EN -> "My reports"
     }
 
     fun navObd(lang: AppLanguage): String = when (lang) {
-        AppLanguage.AR -> "جهاز الفحص"
-        AppLanguage.FR -> "Scanner OBD"
-        AppLanguage.EN -> "OBD Scanner"
+        AppLanguage.AR -> "الفحص الأوتوماتيكي"
+        AppLanguage.FR -> "Scan automatique"
+        AppLanguage.EN -> "Automatic scan"
     }
 
     fun navGuide(lang: AppLanguage): String = when (lang) {
-        AppLanguage.AR -> "دليل المشتري"
-        AppLanguage.FR -> "Guide Achat"
-        AppLanguage.EN -> "Buyer Guide"
+        AppLanguage.AR -> "الدليل"
+        AppLanguage.FR -> "Guide"
+        AppLanguage.EN -> "Guide"
+    }
+
+    fun navAccount(lang: AppLanguage): String = when (lang) {
+        AppLanguage.AR -> "حسابي"
+        AppLanguage.FR -> "Compte"
+        AppLanguage.EN -> "Account"
     }
 
     // Home Screen

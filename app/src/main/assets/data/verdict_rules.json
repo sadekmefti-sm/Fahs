@@ -1,0 +1,40 @@
+{
+  "coolantTemperature": {
+    "normalMinC": 75,
+    "normalMaxC": 104,
+    "orangeMinC": 105,
+    "orangeMaxC": 111,
+    "redMinC": 112,
+    "coldEngineBelowC": 75
+  },
+  "idleSteadiness": {
+    "maxVariationPlusMinusRpm": 60,
+    "warmIdleMinRpm": 550,
+    "warmIdleMaxRpm": 1100,
+    "promptSwitchOffAcBeforeReading": true
+  },
+  "chargingVoltageRunning": {
+    "normalMinV": 13.0,
+    "normalMaxV": 14.8,
+    "neverRedFromVoltageAlone": true,
+    "dongleReadingApproximateNote": true
+  },
+  "fuelMixture": {
+    "longTermTrimNormalPlusMinusPercent": 10.0,
+    "shortTermTrimIgnoreWithinPlusMinusPercent": 25.0
+  },
+  "recentlyClearedMemory": {
+    "redDistanceBelowKm": 50,
+    "redWarmupsAtOrBelow": 2,
+    "orangeIncompleteMonitorsMin": 3
+  },
+  "warningLightAtKeyOn": {
+    "allowDidNotLookOption": true,
+    "didNotLookShowsAsNotChecked": true,
+    "neverLightsUpIsRed": true
+  },
+  "missingReadings": {
+    "neverBlockGreenVerdict": true,
+    "showAsNotAvailable": true
+  }
+}

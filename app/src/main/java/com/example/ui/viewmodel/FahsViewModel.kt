@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import com.example.domain.VinWmiHelper
 import kotlinx.coroutines.launch
 
 enum class NavTab {
@@ -36,8 +37,24 @@ enum class NavTab {
     REPORT,
     INSPECTIONS,
     OBD,
-    GUIDE
+    GUIDE,
+    ACCOUNT
 }
+
+data class OptionalCarDraft(
+    val brand: String,
+    val model: String,
+    val generation: String,
+    val year: Int,
+    val fuelType: String,
+    val gearboxType: String,
+    val engineDesc: String,
+    val plateNumber: String = "",
+    val odometerKm: Int = 0,
+    val hasTurbo: Boolean = false,
+    val isFourWheelDrive: Boolean = false,
+    val bodyType: String = "CITADINE"
+)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FahsViewModel(application: Application) : AndroidViewModel(application) {
@@ -66,6 +83,18 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _preferredQuickMode = MutableStateFlow(false)
     val preferredQuickMode: StateFlow<Boolean> = _preferredQuickMode.asStateFlow()
+
+    private val _optionalCarDraft = MutableStateFlow<OptionalCarDraft?>(null)
+    val optionalCarDraft: StateFlow<OptionalCarDraft?> = _optionalCarDraft.asStateFlow()
+
+    private val _preselectedBrandFromVin = MutableStateFlow<String?>(null)
+    val preselectedBrandFromVin: StateFlow<String?> = _preselectedBrandFromVin.asStateFlow()
+
+    private val _carSelectionReturnTab = MutableStateFlow(NavTab.HOME)
+    val carSelectionReturnTab: StateFlow<NavTab> = _carSelectionReturnTab.asStateFlow()
+
+    private val _autoConnectRememberedDongle = MutableStateFlow(false)
+    val autoConnectRememberedDongle: StateFlow<Boolean> = _autoConnectRememberedDongle.asStateFlow()
 
     private val _activeInspectionId = MutableStateFlow<Long?>(null)
     val activeInspectionId: StateFlow<Long?> = _activeInspectionId.asStateFlow()
@@ -415,9 +444,145 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
         _selectedTab.value = tab
     }
 
-    fun openCarSelection(isQuickMode: Boolean = false) {
+    fun consumeAutoConnectRememberedDongleFlag() {
+        _autoConnectRememberedDongle.value = false
+    }
+
+    fun openCarSelection(
+        isQuickMode: Boolean = false,
+        returnTab: NavTab = NavTab.CHECKLIST_WIZARD
+    ) {
         _preferredQuickMode.value = isQuickMode
+        _carSelectionReturnTab.value = returnTab
         _selectedTab.value = NavTab.CAR_SELECTION
+    }
+
+    fun openOptionalCarSelectionForSession(returnTab: NavTab = NavTab.HOME) {
+        _carSelectionReturnTab.value = returnTab
+        _selectedTab.value = NavTab.CAR_SELECTION
+    }
+
+    fun clearOptionalCarSelection() {
+        _optionalCarDraft.value = null
+    }
+
+    fun setPreselectedBrandFromVin(vin: String?) {
+        val brand = VinWmiHelper.detectBrandFromVin(vin)
+        if (!brand.isNullOrBlank()) {
+            _preselectedBrandFromVin.value = brand
+        }
+    }
+
+    /**
+     * Starts the Automatic Scan path from Home without blocking on car selection.
+     * If a remembered dongle exists, flags immediate connection on the scan screen.
+     */
+    fun startAutomaticScanFromHome(
+        autoConnectRemembered: Boolean,
+        onReady: () -> Unit = {}
+    ) {
+        _autoConnectRememberedDongle.value = autoConnectRemembered
+        val draft = _optionalCarDraft.value
+        val existingActive = activeInspection.value
+        if (existingActive != null && existingActive.status.equals("IN_PROGRESS", ignoreCase = true)) {
+            _selectedTab.value = NavTab.OBD
+            onReady()
+            return
+        }
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val lang = _currentLanguage.value
+            val dateLabel = VinWmiHelper.formatTimestampLabel(now, lang)
+            val detectedWmiBrand = _preselectedBrandFromVin.value
+            val brand = draft?.brand ?: detectedWmiBrand ?: when (lang) {
+                AppLanguage.AR -> "فحص"
+                AppLanguage.FR -> "Inspection"
+                AppLanguage.EN -> "Inspection"
+            }
+            val model = draft?.model ?: dateLabel
+            val generation = draft?.generation ?: ""
+            val year = draft?.year ?: 2018
+            val fuel = draft?.fuelType ?: "ESSENCE"
+            val gearbox = draft?.gearboxType ?: "MANUELLE"
+            val engine = draft?.engineDesc ?: ""
+            val bodyType = draft?.bodyType ?: "CITADINE"
+            val adaptiveList = ChecklistEngine.buildChecklistForCar(
+                brand = brand,
+                model = model,
+                fuelType = fuel,
+                gearboxType = gearbox,
+                isQuickMode = true,
+                generation = generation,
+                engineDescription = engine,
+                carYear = year,
+                odometerKm = draft?.odometerKm ?: 0,
+                hasTurbo = draft?.hasTurbo ?: false,
+                isFourWheelDrive = draft?.isFourWheelDrive ?: false,
+                bodyType = bodyType
+            )
+            val entity = InspectionEntity(
+                carBrand = brand,
+                carModel = model,
+                carGeneration = generation,
+                carYear = year,
+                odometerKm = draft?.odometerKm ?: 0,
+                fuelType = fuel,
+                gearboxType = gearbox,
+                engineDescription = engine,
+                hasTurbo = draft?.hasTurbo ?: false,
+                isFourWheelDrive = draft?.isFourWheelDrive ?: false,
+                bodyType = bodyType,
+                plateNumber = draft?.plateNumber.orEmpty(),
+                inspectionMode = "QUICK",
+                totalQuestions = adaptiveList.size,
+                answeredQuestions = 0,
+                status = "IN_PROGRESS",
+                createdAt = now,
+                updatedAt = now
+            )
+            val id = repository.insertInspection(entity)
+            _activeInspectionId.value = id
+            _selectedTab.value = NavTab.OBD
+            onReady()
+        }
+    }
+
+    /**
+     * Starts a Manual Inspection (Quick or Full) without requiring car selection first.
+     * Uses the optional car draft if the user chose one, or names the report by date & time.
+     */
+    fun startManualInspectionDirectly(
+        isQuickMode: Boolean,
+        onCreated: (Long) -> Unit = {}
+    ) {
+        _preferredQuickMode.value = isQuickMode
+        val draft = _optionalCarDraft.value
+        val now = System.currentTimeMillis()
+        val lang = _currentLanguage.value
+        val dateLabel = VinWmiHelper.formatTimestampLabel(now, lang)
+        val detectedWmiBrand = _preselectedBrandFromVin.value
+
+        createConfiguredInspection(
+            brand = draft?.brand ?: detectedWmiBrand ?: when (lang) {
+                AppLanguage.AR -> "فحص"
+                AppLanguage.FR -> "Inspection"
+                AppLanguage.EN -> "Inspection"
+            },
+            model = draft?.model ?: dateLabel,
+            generation = draft?.generation ?: "",
+            year = draft?.year ?: 2018,
+            fuelType = draft?.fuelType ?: "ESSENCE",
+            gearboxType = draft?.gearboxType ?: "MANUELLE",
+            engineDesc = draft?.engineDesc ?: "",
+            isQuickMode = isQuickMode,
+            plateNumber = draft?.plateNumber ?: "",
+            odometerKm = draft?.odometerKm ?: 0,
+            hasTurbo = draft?.hasTurbo ?: false,
+            isFourWheelDrive = draft?.isFourWheelDrive ?: false,
+            bodyType = draft?.bodyType ?: "CITADINE",
+            targetTab = NavTab.CHECKLIST_WIZARD,
+            onCreated = onCreated
+        )
     }
 
     fun openChecklistForInspection(inspectionId: Long) {
@@ -455,8 +620,116 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
         hasTurbo: Boolean = false,
         isFourWheelDrive: Boolean = false,
         bodyType: String = "CITADINE",
+        targetTab: NavTab = _carSelectionReturnTab.value,
         onCreated: (Long) -> Unit = {}
     ) {
+        val draft = OptionalCarDraft(
+            brand = brand,
+            model = model,
+            generation = generation,
+            year = year,
+            fuelType = fuelType,
+            gearboxType = gearboxType,
+            engineDesc = engineDesc,
+            plateNumber = plateNumber.trim(),
+            odometerKm = odometerKm,
+            hasTurbo = hasTurbo,
+            isFourWheelDrive = isFourWheelDrive,
+            bodyType = bodyType
+        )
+        _optionalCarDraft.value = draft
+
+        // If user only picked an optional car from Home (or updated the car from OBD/Report),
+        // update the existing active inspection if present and return to the caller screen.
+        if (targetTab == NavTab.HOME) {
+            val existingId = _activeInspectionId.value
+            if (existingId != null) {
+                viewModelScope.launch {
+                    val current = repository.getInspection(existingId)
+                    if (current != null && current.status.equals("IN_PROGRESS", ignoreCase = true)) {
+                        val adaptiveList = ChecklistEngine.buildChecklistForCar(
+                            brand = brand,
+                            model = model,
+                            fuelType = fuelType,
+                            gearboxType = gearboxType,
+                            isQuickMode = isQuickMode,
+                            generation = generation,
+                            engineDescription = engineDesc,
+                            carYear = year,
+                            odometerKm = odometerKm,
+                            hasTurbo = hasTurbo,
+                            isFourWheelDrive = isFourWheelDrive,
+                            bodyType = bodyType
+                        )
+                        repository.updateInspection(
+                            current.copy(
+                                carBrand = brand,
+                                carModel = model,
+                                carGeneration = generation,
+                                carYear = year,
+                                odometerKm = odometerKm,
+                                fuelType = fuelType,
+                                gearboxType = gearboxType,
+                                engineDescription = engineDesc,
+                                hasTurbo = hasTurbo,
+                                isFourWheelDrive = isFourWheelDrive,
+                                bodyType = bodyType,
+                                plateNumber = plateNumber.trim(),
+                                totalQuestions = adaptiveList.size,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        )
+                    }
+                }
+            }
+            _selectedTab.value = NavTab.HOME
+            return
+        }
+
+        val activeId = _activeInspectionId.value
+        if ((targetTab == NavTab.OBD || targetTab == NavTab.REPORT) && activeId != null) {
+            viewModelScope.launch {
+                val current = repository.getInspection(activeId)
+                if (current != null) {
+                    val adaptiveList = ChecklistEngine.buildChecklistForCar(
+                        brand = brand,
+                        model = model,
+                        fuelType = fuelType,
+                        gearboxType = gearboxType,
+                        isQuickMode = isQuickMode,
+                        generation = generation,
+                        engineDescription = engineDesc,
+                        carYear = year,
+                        odometerKm = odometerKm,
+                        hasTurbo = hasTurbo,
+                        isFourWheelDrive = isFourWheelDrive,
+                        bodyType = bodyType
+                    )
+                    repository.updateInspection(
+                        current.copy(
+                            carBrand = brand,
+                            carModel = model,
+                            carGeneration = generation,
+                            carYear = year,
+                            odometerKm = odometerKm,
+                            fuelType = fuelType,
+                            gearboxType = gearboxType,
+                            engineDescription = engineDesc,
+                            hasTurbo = hasTurbo,
+                            isFourWheelDrive = isFourWheelDrive,
+                            bodyType = bodyType,
+                            plateNumber = plateNumber.trim(),
+                            totalQuestions = adaptiveList.size,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+                _selectedTab.value = targetTab
+                onCreated(activeId)
+            }
+            return
+        }
+
         viewModelScope.launch {
             val adaptiveList = ChecklistEngine.buildChecklistForCar(
                 brand = brand,
@@ -492,7 +765,7 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
             )
             val id = repository.insertInspection(newInspection)
             _activeInspectionId.value = id
-            _selectedTab.value = NavTab.CHECKLIST_WIZARD
+            _selectedTab.value = targetTab
             onCreated(id)
         }
     }
@@ -777,11 +1050,45 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
         if (scanResult.isSimulated) return
 
         _lastObdScanResult.value = scanResult
-        val inspectionId = _activeInspectionId.value ?: return
+        setPreselectedBrandFromVin(scanResult.ecuVin)
         viewModelScope.launch {
+            val lang = _currentLanguage.value
+            val now = System.currentTimeMillis()
+            val detectedWmiBrand = VinWmiHelper.detectBrandFromVin(scanResult.ecuVin)
+            var inspectionId = _activeInspectionId.value
+            if (inspectionId == null) {
+                val draft = _optionalCarDraft.value
+                val dateLabel = VinWmiHelper.formatTimestampLabel(now, lang)
+                val brand = draft?.brand ?: detectedWmiBrand ?: when (lang) {
+                    AppLanguage.AR -> "فحص"
+                    AppLanguage.FR -> "Inspection"
+                    AppLanguage.EN -> "Inspection"
+                }
+                val model = draft?.model ?: dateLabel
+                val autoInspection = InspectionEntity(
+                    carBrand = brand,
+                    carModel = model,
+                    carGeneration = draft?.generation.orEmpty(),
+                    carYear = draft?.year ?: 2018,
+                    odometerKm = draft?.odometerKm ?: 0,
+                    fuelType = draft?.fuelType ?: "ESSENCE",
+                    gearboxType = draft?.gearboxType ?: "MANUELLE",
+                    engineDescription = draft?.engineDesc.orEmpty(),
+                    hasTurbo = draft?.hasTurbo ?: false,
+                    isFourWheelDrive = draft?.isFourWheelDrive ?: false,
+                    bodyType = draft?.bodyType ?: "CITADINE",
+                    plateNumber = draft?.plateNumber.orEmpty(),
+                    inspectionMode = "QUICK",
+                    status = "IN_PROGRESS",
+                    createdAt = now,
+                    updatedAt = now
+                )
+                inspectionId = repository.insertInspection(autoInspection)
+                _activeInspectionId.value = inspectionId
+            }
+
             val current = repository.getInspection(inspectionId) ?: return@launch
             val existingAnswers = activeInspectionAnswers.value
-            val lang = _currentLanguage.value
 
             val isMilTampered = !milBulbLitOnDashboard || (scanResult.milCommandedOn == true && !milBulbLitOnDashboard)
             val isEcuVinDifferent = !scanResult.ecuVin.isNullOrBlank() &&
@@ -927,8 +1234,17 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
                 ecuVinComparison.name
             }
 
+            val updatedBrand = if (!detectedWmiBrand.isNullOrBlank() &&
+                VinWmiHelper.isUnselectedCar(current.carBrand, current.carModel)
+            ) {
+                detectedWmiBrand
+            } else {
+                current.carBrand
+            }
+
             repository.updateInspection(
                 current.copy(
+                    carBrand = updatedBrand,
                     vin = updatedVin,
                     hasObdScan = true,
                     obdCommunicationSuccess = scanResult.isCommunicationSuccess,

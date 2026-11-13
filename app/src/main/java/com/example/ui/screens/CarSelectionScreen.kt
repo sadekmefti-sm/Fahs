@@ -89,6 +89,9 @@ import com.example.ui.theme.StatusWarningAmberOnContainer
 fun CarSelectionScreen(
     language: AppLanguage,
     initialQuickMode: Boolean = false,
+    preselectedBrand: String? = null,
+    isOptionalSelectionOnly: Boolean = false,
+    onSkipCarSelection: (() -> Unit)? = null,
     onBack: () -> Unit,
     onCarConfirmed: (
         brand: String,
@@ -107,8 +110,16 @@ fun CarSelectionScreen(
     ) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val initialBrandChip = remember(preselectedBrand) {
+        val candidate = preselectedBrand?.trim().orEmpty()
+        if (candidate.isNotBlank() && AlgerianCarCatalog.popularBrands.any { it.equals(candidate, ignoreCase = true) }) {
+            AlgerianCarCatalog.popularBrands.first { it.equals(candidate, ignoreCase = true) }
+        } else {
+            "All"
+        }
+    }
     var searchQuery by remember { mutableStateOf("") }
-    var selectedBrandFilter by remember { mutableStateOf("All") }
+    var selectedBrandFilter by remember(initialBrandChip) { mutableStateOf(initialBrandChip) }
     var selectedCar by remember { mutableStateOf<AlgerianCarModel?>(null) }
     var isOtherCarMode by remember { mutableStateOf(false) }
 
@@ -127,7 +138,7 @@ fun CarSelectionScreen(
     var optionalPlateLabel by remember { mutableStateOf("") }
 
     // Custom "Other Car" states
-    var customBrand by remember { mutableStateOf("") }
+    var customBrand by remember(preselectedBrand) { mutableStateOf(preselectedBrand.orEmpty()) }
     var customModel by remember { mutableStateOf("") }
 
     // Phase 7 (Item 3): Offline ML Kit Odometer OCR states (suggestion that user confirms + manual fallback)
@@ -340,6 +351,23 @@ fun CarSelectionScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+
+                if (onSkipCarSelection != null && selectedCar == null && !isOtherCarMode) {
+                    androidx.compose.material3.TextButton(
+                        onClick = onSkipCarSelection,
+                        modifier = Modifier.testTag("skip_optional_car_selection_btn")
+                    ) {
+                        Text(
+                            text = when (language) {
+                                AppLanguage.AR -> "تخطي"
+                                AppLanguage.FR -> "Passer"
+                                AppLanguage.EN -> "Skip"
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Emerald700
+                        )
+                    }
                 }
             }
         }
@@ -1386,10 +1414,18 @@ fun CarSelectionScreen(
                         Icon(imageVector = Icons.Default.Check, contentDescription = null)
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = when (language) {
-                                AppLanguage.AR -> "ابدأ الفحص الميداني الآن"
-                                AppLanguage.FR -> "Démarrer l'inspection sur place"
-                                AppLanguage.EN -> "Launch On-Site Inspection Now"
+                            text = if (isOptionalSelectionOnly) {
+                                when (language) {
+                                    AppLanguage.AR -> "تأكيد موديل السيارة"
+                                    AppLanguage.FR -> "Enregistrer ce modèle de voiture"
+                                    AppLanguage.EN -> "Save this car model"
+                                }
+                            } else {
+                                when (language) {
+                                    AppLanguage.AR -> "ابدأ الفحص الميداني الآن"
+                                    AppLanguage.FR -> "Démarrer l'inspection sur place"
+                                    AppLanguage.EN -> "Start inspection now"
+                                }
                             },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,

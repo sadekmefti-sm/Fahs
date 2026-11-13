@@ -1,8 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/ic_fahs_shield_logo_1794321364551"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Subtle inner instrument dial surface (#162D26) -->
+    <path
+        android:fillColor="#162D26"
+        android:pathData="M54,24 A30,30 0 1,1 53.99,24 Z" />
+
+    <!-- Unlit upper-right instrument track arc (#244239) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M34.7,76.9 A30,30 0 1,1 73.3,76.9"
+        android:strokeWidth="5.5"
+        android:strokeColor="#244239"
+        android:strokeLineCap="round" />
+
+    <!-- Active neutral pale grey-blue instrument arc (#D6E2EE) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M34.7,76.9 A30,30 0 1,1 75.2,32.8"
+        android:strokeWidth="5.5"
+        android:strokeColor="#D6E2EE"
+        android:strokeLineCap="round" />
+
+    <!-- Brand badge pill at bottom of dial (#0F6B4F) -->
+    <path
+        android:fillColor="#0F6B4F"
+        android:pathData="M43,69 L65,69 A4,4 0 0,1 69,73 L69,75 A4,4 0 0,1 65,79 L43,79 A4,4 0 0,1 39,75 L39,73 A4,4 0 0,1 43,69 Z" />
+
+    <!-- Crisp white diagnostic check / needle mark in center -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M43,54 L50.5,61.5 L66,45.5"
+        android:strokeWidth="5"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
