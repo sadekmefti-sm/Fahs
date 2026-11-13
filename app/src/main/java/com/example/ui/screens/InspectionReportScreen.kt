@@ -637,6 +637,13 @@ fun InspectionReportScreen(
             }
         }
 
+        // 3b. Phase 8 Sample PDF Reports (AR / FR / EN) 1-Tap Preview, Download & Share Card
+        item {
+            com.example.ui.components.SamplePdfReportsShowcaseCard(
+                currentLanguage = language
+            )
+        }
+
         // 4. Dedicated OBD2 Diagnostic Block in the Report (Phase 5)
         item {
             ObdReportBlockCard(

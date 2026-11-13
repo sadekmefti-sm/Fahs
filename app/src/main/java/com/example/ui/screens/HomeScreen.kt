@@ -155,6 +155,13 @@ fun HomeScreen(
             }
         }
 
+        // 1b. Phase 8 Sample PDF Reports (AR / FR / EN) 1-Tap Preview, Download & Share Card
+        item {
+            com.example.ui.components.SamplePdfReportsShowcaseCard(
+                currentLanguage = language
+            )
+        }
+
         // 2. Editorial Automotive Inspection Hero Card (Clickable Anywhere + Dedicated Buttons)
         item {
             Card(

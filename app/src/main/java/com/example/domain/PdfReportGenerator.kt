@@ -1715,4 +1715,172 @@ object PdfReportGenerator {
         drawTextBlock(canvas, disclaimerText, disclaimerPaint, disclaimerX, lineY + 6f, disclaimerW.toInt(), isRtl)
         drawTextBlock(canvas, pageText, pageNumPaint, pageX, lineY + 6f, pageW.toInt(), isRtl)
     }
+
+    /**
+     * Builds the Phase 8 sample test inspection report (`Peugeot 208 2018`, `2026-11-11`)
+     * so the user can preview, download, or share the sample report in Arabic, French, or English
+     * directly on their phone in 1 tap.
+     */
+    fun buildSampleTestInspectionReport(context: Context, language: AppLanguage): InspectionReportData {
+        val photoDir = File(context.cacheDir, "sample_photos").apply { mkdirs() }
+        val testPhotoFile = File(photoDir, "sample_leak_photo.jpg")
+        if (!testPhotoFile.exists()) {
+            runCatching {
+                val sampleBmp = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888)
+                val sampleCanvas = Canvas(sampleBmp)
+                val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(30, 41, 59) }
+                sampleCanvas.drawRect(0f, 0f, 320f, 240f, bgPaint)
+                val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.rgb(220, 38, 38)
+                    style = Paint.Style.STROKE
+                    strokeWidth = 6f
+                }
+                sampleCanvas.drawCircle(160f, 120f, 58f, highlightPaint)
+                val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.WHITE
+                    textSize = 22f
+                    isFakeBoldText = true
+                }
+                sampleCanvas.drawText("Carter / Joint", 95f, 128f, labelPaint)
+                FileOutputStream(testPhotoFile).use { out ->
+                    sampleBmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                }
+                sampleBmp.recycle()
+            }
+        }
+
+        val fixedDateCal = java.util.Calendar.getInstance(java.util.TimeZone.getDefault()).apply {
+            set(2026, java.util.Calendar.NOVEMBER, 11, 14, 30, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val checklist = ChecklistEngine.buildChecklistForCar(
+            brand = "Peugeot",
+            model = "208",
+            fuelType = "ESSENCE",
+            gearboxType = "MANUELLE",
+            isQuickMode = false,
+            engineDescription = "1.2 PureTech 82ch",
+            hasTurbo = false,
+            isFourWheelDrive = false,
+            bodyType = "CITADINE"
+        )
+
+        val answersMap = mutableMapOf<String, String>()
+        val savedAnswerEntities = mutableListOf<com.example.data.local.ChecklistAnswerEntity>()
+
+        val criticalProblemItem = checklist.first { it.severity == ItemSeverity.CRITICAL }
+        val importantProblemItems = checklist.filter { it.severity == ItemSeverity.IMPORTANT }.take(2)
+        val minorProblemItem = checklist.firstOrNull { it.severity == ItemSeverity.MINOR }
+            ?: checklist.filter { it.severity == ItemSeverity.IMPORTANT }.drop(2).first()
+        val skippedCriticalItem = checklist.filter {
+            it.severity == ItemSeverity.CRITICAL && it.id != criticalProblemItem.id
+        }.first()
+        val skippedImportantItems = checklist.filter {
+            it.severity == ItemSeverity.IMPORTANT &&
+                it.id !in importantProblemItems.map { p -> p.id } &&
+                it.id != minorProblemItem.id
+        }.take(2)
+
+        for (item in checklist) {
+            val status = when {
+                item.id == criticalProblemItem.id -> "PROBLEM"
+                item.id in importantProblemItems.map { it.id } -> "PROBLEM"
+                item.id == minorProblemItem.id -> "PROBLEM"
+                item.id == skippedCriticalItem.id -> "UNCHECKED"
+                item.id in skippedImportantItems.map { it.id } -> "UNCHECKED"
+                else -> "GOOD"
+            }
+            if (status != "UNCHECKED") {
+                answersMap[item.id] = status
+            }
+            val comment = when (item.id) {
+                criticalProblemItem.id -> when (language) {
+                    AppLanguage.AR -> "تسرب زيت واضح + حزام التوزيع المغمور يحتاج فحصاً عاجلاً"
+                    AppLanguage.FR -> "Suintement d'huile visible + courroie humide à vérifier d'urgence"
+                    AppLanguage.EN -> "Visible oil seepage + wet timing belt needs urgent inspection"
+                }
+                importantProblemItems[0].id -> when (language) {
+                    AppLanguage.AR -> "تآكل واضح في الإطارات الأمامية (DOT 1419)، يلزم تغييرها"
+                    AppLanguage.FR -> "Usure prononcée à l'avant (DOT 1419), prévoir remplacement"
+                    AppLanguage.EN -> "Noticeable front tyre wear (DOT 1419), plan replacement"
+                }
+                importantProblemItems[1].id -> when (language) {
+                    AppLanguage.AR -> "اهتزاز خفيف عند الفرملة على سرعة 90 كم/س (أقراص الفرامل الأمامية)"
+                    AppLanguage.FR -> "Légère vibration au freinage à 90 km/h (disques avant)"
+                    AppLanguage.EN -> "Slight vibration when braking at 90 km/h (front brake discs)"
+                }
+                minorProblemItem.id -> when (language) {
+                    AppLanguage.AR -> "خدش سطحي على الصدام الخلفي الأيمن"
+                    AppLanguage.FR -> "Rayure superficielle pare-chocs arrière droit"
+                    AppLanguage.EN -> "Surface scratch on rear-right bumper"
+                }
+                else -> ""
+            }
+            val photoPath = if (item.id == criticalProblemItem.id) testPhotoFile.absolutePath else null
+            savedAnswerEntities.add(
+                com.example.data.local.ChecklistAnswerEntity(
+                    inspectionId = 42L,
+                    itemId = item.id,
+                    category = item.section.titleFr,
+                    questionFr = item.questionFr,
+                    questionAr = item.questionAr,
+                    questionEn = item.questionEn,
+                    status = status,
+                    severity = item.severity.name,
+                    estimatedCostDzd = if (status == "PROBLEM") item.getAverageCostDzd() else 0,
+                    note = comment,
+                    photoUri = photoPath
+                )
+            )
+        }
+
+        val (score, verdict, totalCost) = ChecklistEngine.calculateScoreAndVerdict(answersMap, checklist)
+        val obdNotes = buildString {
+            append("[OBD2 Scan: 2 codes | P0420, P0299 | Readiness: ATTENTION: Codes effacés récemment (18 km depuis effacement)]\n")
+            append("[OBD2 Live: rpm=780 tr/min|680 - 900 tr/min|GREEN;temp=91 °C|80 - 98 °C|GREEN;volt=13.3 V|13.5 - 14.7 V|ORANGE;trim=+9.4 %|-10% .. +10%|ORANGE]")
+        }
+
+        val testInspection = InspectionEntity(
+            id = 42L,
+            carBrand = "Peugeot",
+            carModel = "208",
+            carGeneration = "Phase 1 (2012-2019)",
+            carYear = 2018,
+            odometerKm = 142000,
+            fuelType = "ESSENCE",
+            gearboxType = "MANUELLE",
+            engineDescription = "1.2 PureTech 82ch",
+            hasTurbo = false,
+            isFourWheelDrive = false,
+            bodyType = "CITADINE",
+            vin = "VF3CC8HR0JW049281",
+            plateNumber = "11845-118-16",
+            inspectionMode = "FULL",
+            status = "COMPLETED",
+            overallScore = score,
+            verdict = verdict,
+            totalEstimatedCostDzd = totalCost,
+            sellerAskingPriceMillions = 235.0,
+            userQuotedRepairDzd = 65000,
+            hasObdScan = true,
+            obdCommunicationSuccess = true,
+            obdProtocolDescription = "ISO 15765-4 CAN (11 bit, 500 kbps)",
+            obdDtcCodesSummary = "P0420 (STORED), P0299 (STORED)",
+            obdDtcCount = 2,
+            obdClearedStatus = "STRONG_WARNING",
+            obdDistanceSinceClearedKm = 18,
+            obdWarmupsSinceCleared = 1,
+            obdMilBulbLitAtKeyOn = true,
+            obdMilCommandedByEcu = "ON",
+            obdEcuVin = "VF3CC8HR0JW049281",
+            obdEcuVinComparison = "SAME",
+            problemCount = 4,
+            answeredQuestions = checklist.size - 3,
+            totalQuestions = checklist.size,
+            createdAt = fixedDateCal.timeInMillis,
+            updatedAt = fixedDateCal.timeInMillis,
+            notes = obdNotes
+        )
+        return ReportEngine.buildReport(testInspection, savedAnswerEntities)
+    }
 }
