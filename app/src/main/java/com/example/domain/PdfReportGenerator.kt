@@ -782,7 +782,7 @@ object PdfReportGenerator {
         val capLine = report.getCriticalCapOneLineExplanation(language)
         val rawVerdictSummary = report.getVerdictSummary(language)
         val verdictSummary = if (capLine != null && rawVerdictSummary.startsWith(capLine)) {
-            rawVerdictSummary.removePrefix(capLine).trim()
+            rawVerdictSummary.removePrefix(capLine).trimStart('.', ' ', '،')
         } else {
             rawVerdictSummary
         }
@@ -1380,16 +1380,25 @@ object PdfReportGenerator {
                             else -> COLOR_SLATE_500
                         }
                         val markerTag = when (gauge.status) {
-                            "GREEN" -> "OK"
-                            "ORANGE" -> "WARN"
-                            "RED" -> "ALERT"
-                            else -> "N/A"
+                            "GREEN" -> if (language == AppLanguage.AR) "طبيعي" else "OK"
+                            "ORANGE" -> if (language == AppLanguage.AR) "انتباه" else "WARN"
+                            "RED" -> if (language == AppLanguage.AR) "خطر" else "ALERT"
+                            else -> if (language == AppLanguage.AR) "غير متوفر" else "N/A"
+                        }
+                        val normalLabel = when (language) {
+                            AppLanguage.AR -> "المدى الطبيعي"
+                            AppLanguage.FR -> "Normal"
+                            AppLanguage.EN -> "Normal"
                         }
                         val dotX = mirrorX(MARGIN_H + 16f, 8f, isRtl)
                         fillPaint.color = markerColor
                         canvas.drawCircle(dotX + 4f, liveY + 6f, 4f, fillPaint)
 
-                        val rowText = "${gauge.getName(language)} : ${gauge.valueText} (Normal : ${gauge.normalRangeText}) [$markerTag]"
+                        val rowText = if (isRtl) {
+                            "${gauge.getName(language)} : \u200E${gauge.valueText}\u200E ($normalLabel : \u200E${gauge.normalRangeText}\u200E) [$markerTag]"
+                        } else {
+                            "${gauge.getName(language)} : ${gauge.valueText} ($normalLabel : ${gauge.normalRangeText}) [$markerTag]"
+                        }
                         val rowTextX = mirrorX(MARGIN_H + 30f, CONTENT_WIDTH - 42f, isRtl)
                         drawTextBlock(canvas, rowText, smallBoldPaint, rowTextX, liveY, (CONTENT_WIDTH - 42f).toInt(), isRtl)
                         liveY += 15f

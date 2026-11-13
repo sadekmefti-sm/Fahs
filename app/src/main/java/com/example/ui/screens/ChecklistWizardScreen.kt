@@ -240,6 +240,7 @@ fun ChecklistWizardScreen(
         )
     }
     var pendingCameraTempFile by remember(currentItem.id) { mutableStateOf<File?>(null) }
+    var showWizardCameraPermExplanation by remember(currentItem.id) { mutableStateOf(false) }
 
     // Zero-permission Android Photo Picker for choosing an image from gallery (copies into app storage)
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -883,7 +884,7 @@ fun ChecklistWizardScreen(
                                     pendingCameraTempFile = tempFile
                                     cameraTakePictureLauncher.launch(uri)
                                 } else {
-                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                    showWizardCameraPermExplanation = true
                                 }
                             },
                             modifier = Modifier
@@ -969,6 +970,49 @@ fun ChecklistWizardScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                        }
+                    }
+
+                    if (showWizardCameraPermExplanation) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            color = Emerald50,
+                            border = BorderStroke(1.dp, Emerald200)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = when (language) {
+                                        AppLanguage.AR -> "نحتاج صلاحية الكاميرا لتصوير أي عيب أو ملاحظة في السيارة وإرفاق الصورة في تقرير الفحص PDF (تُحفظ محلياً في هاتفك فقط)."
+                                        AppLanguage.FR -> "L'accès à la caméra sert uniquement à photographier les défauts observés pour les joindre à votre rapport PDF (stocké sur votre téléphone)."
+                                        AppLanguage.EN -> "Camera access is used solely to photograph car findings and include them in your PDF report (stored privately on your phone)."
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Emerald900
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Button(
+                                    onClick = {
+                                        showWizardCameraPermExplanation = false
+                                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Emerald700),
+                                    modifier = Modifier.testTag("confirm_wizard_camera_perm_btn")
+                                ) {
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "متابعة وفتح الكاميرا"
+                                            AppLanguage.FR -> "Continuer & Ouvrir la caméra"
+                                            AppLanguage.EN -> "Continue & Open Camera"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
                         }
                     }
 

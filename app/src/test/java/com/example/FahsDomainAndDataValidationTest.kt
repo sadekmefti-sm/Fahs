@@ -20,7 +20,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class ExampleUnitTest {
+class FahsDomainAndDataValidationTest {
 
     @Test
     fun `checklist library has at least 120 items across all 9 sections in 3 languages`() {
@@ -757,5 +757,128 @@ class ExampleUnitTest {
         assertTrue(summaryAr.contains("أبرز نقاط القوة"))
         assertTrue(summaryAr.contains("اطلب من الميكانيكي"))
     }
+
+    @Test
+    fun `phase 9 score rules enforce 70 percent threshold all critical items and area score breakdown`() {
+        val items = ChecklistEngine.buildChecklistForCar(
+            brand = "Peugeot",
+            model = "208",
+            fuelType = "ESSENCE",
+            gearboxType = "MANUELLE",
+            isQuickMode = false
+        )
+        val criticalIds = items.filter { it.severity == ItemSeverity.CRITICAL }.map { it.id }.toSet()
+        assertTrue(criticalIds.isNotEmpty())
+
+        // 1. Over 70% answered, but 1 critical item is left UNCHECKED -> score MUST be null ("INCOMPLETE")
+        val missingOneCritical = items.associate { item ->
+            item.id to if (item.id == criticalIds.first()) "UNCHECKED" else "GOOD"
+        }
+        val (scoreMissingCrit, verdictMissingCrit, _) = ChecklistEngine.calculateScoreAndVerdict(missingOneCritical, items)
+        assertNull("Leaving even 1 critical item unchecked must return null score", scoreMissingCrit)
+        assertEquals("INCOMPLETE", verdictMissingCrit)
+
+        // 2. All critical items answered GOOD, but total coverage < 70% -> score MUST be null ("INCOMPLETE")
+        val below70Percent = items.associate { item ->
+            item.id to if (item.severity == ItemSeverity.CRITICAL) "GOOD" else "UNCHECKED"
+        }
+        val (scoreBelow70, verdictBelow70, _) = ChecklistEngine.calculateScoreAndVerdict(below70Percent, items)
+        assertNull("Answering fewer than 70% of items must return null score", scoreBelow70)
+        assertEquals("INCOMPLETE", verdictBelow70)
+
+        // 3. All items answered GOOD -> 100/100 and GOOD verdict
+        val allGood = items.associate { it.id to "GOOD" }
+        val (scoreAllGood, verdictAllGood, _) = ChecklistEngine.calculateScoreAndVerdict(allGood, items)
+        assertEquals(100, scoreAllGood)
+        assertEquals("GOOD", verdictAllGood)
+    }
+
+    @Test
+    fun `phase 9 order message builder formats AR FR and EN messages and calculates stop desk vs home totals`() {
+        val wilayaOran = com.example.data.repository.WilayaDeliveryFee(
+            wilayaCode = "31",
+            nameFr = "Oran",
+            nameAr = "وهران",
+            nameEn = "Oran",
+            zone = "OUEST",
+            homeFeeDzd = 800,
+            stopDeskFeeDzd = 450
+        )
+        val settings = com.example.data.repository.ShopSettings(
+            shopEnabled = true,
+            whatsappNumber = "+213550112233",
+            contactEmail = "orders@fahs.dz",
+            donglePriceDzd = 2500,
+            inStock = true,
+            deliveryFees = listOf(wilayaOran)
+        )
+
+        // Stop desk: 1 * 2500 + 450 = 2950 DZD
+        assertEquals(2950, settings.calculateOrderTotalDzd(wilayaOran, isHomeDelivery = false, quantity = 1))
+        // Home delivery: 2 * 2500 + 800 = 5800 DZD
+        assertEquals(5800, settings.calculateOrderTotalDzd(wilayaOran, isHomeDelivery = true, quantity = 2))
+
+        val msgAr = settings.buildOrderMessage(
+            language = AppLanguage.AR,
+            wilaya = wilayaOran,
+            isHomeDelivery = false,
+            quantity = 1,
+            customerName = "أحمد",
+            customerPhone = "0550998877",
+            addressNote = "حي العقيد لطفي"
+        )
+        assertTrue(msgAr.contains("31 - وهران"))
+        assertTrue(msgAr.contains("مكتب التوصيل (Stop Desk)"))
+        assertTrue(msgAr.contains("أحمد"))
+        assertTrue(msgAr.contains("0550998877"))
+
+        val msgEn = settings.buildOrderMessage(
+            language = AppLanguage.EN,
+            wilaya = wilayaOran,
+            isHomeDelivery = true,
+            quantity = 2,
+            customerName = "Amine",
+            customerPhone = "0661223344",
+            addressNote = "Bir El Djir"
+        )
+        assertTrue(msgEn.contains("31 - Oran"))
+        assertTrue(msgEn.contains("Home Delivery"))
+        assertTrue(msgEn.contains("Quantity: 2"))
+        assertTrue(msgEn.contains("Amine"))
+        assertTrue(msgEn.contains("5,800 DZD"))
+    }
+
+    @Test
+    fun `phase 9 data file validation ensures unique IDs valid ranges and complete trilingual texts`() {
+        // 1. Validate AlgerianCarCatalog
+        val models = com.example.data.model.AlgerianCarCatalog.models
+        val modelIds = models.map { it.id }
+        assertEquals("Duplicate car model IDs found", modelIds.size, modelIds.distinct().size)
+        for (model in models) {
+            assertTrue("Missing engines on ${model.id}", model.commonEngines.isNotEmpty())
+            assertTrue("Missing generations on ${model.id}", model.generations.isNotEmpty())
+            assertTrue("Invalid generation defaultYear on ${model.id}", model.generations.all { it.defaultYear in 1990..2026 })
+            assertTrue("Missing OBD port hint on ${model.id}", model.obdPortHintFr.isNotBlank() && model.obdPortHintAr.isNotBlank() && model.obdPortHintEn.isNotBlank())
+        }
+
+        // 2. Validate ChecklistEngine.fullLibrary
+        val checklist = ChecklistEngine.fullLibrary
+        val itemIds = checklist.map { it.id }
+        assertEquals("Duplicate checklist item IDs found", itemIds.size, itemIds.distinct().size)
+        for (item in checklist) {
+            assertTrue("Invalid cost range on ${item.id}", item.minRepairCostDzd >= 0 && item.maxRepairCostDzd >= item.minRepairCostDzd)
+            assertTrue("Missing howToCheck on ${item.id}", item.howToCheckFr.isNotBlank() && item.howToCheckAr.isNotBlank() && item.howToCheckEn.isNotBlank())
+            assertTrue("Missing whereToLook on ${item.id}", item.whereToLookFr.isNotBlank() && item.whereToLookAr.isNotBlank() && item.whereToLookEn.isNotBlank())
+        }
+
+        // 3. Validate ObdDiagnosticEngine.offlineDtcDatabase
+        val dtcRegex = Regex("^[PUBC][0-9A-F]{4}$")
+        for ((code, entry) in ObdDiagnosticEngine.offlineDtcDatabase) {
+            assertTrue("Malformed DTC code $code", dtcRegex.matches(code))
+            assertEquals(code, entry.code)
+            assertTrue("Invalid cost range on DTC $code", entry.minCostDzd >= 0 && entry.maxCostDzd >= entry.minCostDzd)
+        }
+    }
 }
+
 

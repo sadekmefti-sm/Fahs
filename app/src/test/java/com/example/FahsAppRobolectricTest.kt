@@ -24,16 +24,17 @@ import org.robolectric.annotation.GraphicsMode
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-class ExampleRobolectricTest {
+class FahsAppRobolectricTest {
 
   @get:Rule
   val composeTestRule = createAndroidComposeRule<MainActivity>()
 
   @Test
-  fun `read string from context`() {
+  fun `read string from context and verify dz_fahs_app application id`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val appName = context.getString(R.string.app_name)
     assertEquals("Fahs", appName)
+    assertEquals("dz.fahs.app", BuildConfig.APPLICATION_ID)
   }
 
   @Test
@@ -142,6 +143,17 @@ class ExampleRobolectricTest {
     assertEquals(2500, bundled.donglePriceDzd)
     assertTrue(bundled.inStock)
     assertEquals(58, bundled.deliveryFees.size)
+
+    // Validate all 58 wilaya codes ("01" .. "58"), non-blank AR/FR/EN names, and fee invariants
+    val expectedCodes = (1..58).map { it.toString().padStart(2, '0') }
+    assertEquals(expectedCodes, bundled.deliveryFees.map { it.wilayaCode })
+    for (wilaya in bundled.deliveryFees) {
+      assertTrue("Blank AR name for wilaya ${wilaya.wilayaCode}", wilaya.nameAr.isNotBlank())
+      assertTrue("Blank FR name for wilaya ${wilaya.wilayaCode}", wilaya.nameFr.isNotBlank())
+      assertTrue("Blank EN name for wilaya ${wilaya.wilayaCode}", wilaya.nameEn.isNotBlank())
+      assertTrue("Stop desk fee must be > 0 for ${wilaya.wilayaCode}", wilaya.stopDeskFeeDzd > 0)
+      assertTrue("Home fee must be >= stop desk fee for ${wilaya.wilayaCode}", wilaya.homeFeeDzd >= wilaya.stopDeskFeeDzd)
+    }
 
     // 3. Verify Algiers (16) and Oran (31) delivery calculations
     val algiers = bundled.deliveryFees.first { it.wilayaCode == "16" }
@@ -375,6 +387,7 @@ class ExampleRobolectricTest {
 
     // 5. Generate PDF reports and high-resolution page preview PNGs in all 3 languages (EN, FR, AR)
     val outputDir = java.io.File("build/reports/phase8_samples").apply { mkdirs() }
+    val rootSamplesDir = java.io.File("../sample_reports").apply { mkdirs() }
     val artifactDir = java.io.File("/.aistudio/artifacts/brain/6b4ac22d-0983-4414-b677-09169a0178c4").apply { mkdirs() }
     for (lang in listOf(AppLanguage.EN, AppLanguage.FR, AppLanguage.AR)) {
       val pdfFile = com.example.domain.PdfReportGenerator.generatePdfFile(
@@ -389,6 +402,7 @@ class ExampleRobolectricTest {
 
       val langPdfName = "Fahs_Peugeot_208_2018_2026-11-11_${lang.code.uppercase()}.pdf"
       pdfFile.copyTo(java.io.File(outputDir, langPdfName), overwrite = true)
+      runCatching { pdfFile.copyTo(java.io.File(rootSamplesDir, langPdfName), overwrite = true) }
       runCatching { pdfFile.copyTo(java.io.File(artifactDir, langPdfName), overwrite = true) }
 
       val pageBitmaps = com.example.domain.PdfReportGenerator.renderReportPagesToBitmaps(
@@ -406,8 +420,35 @@ class ExampleRobolectricTest {
         java.io.FileOutputStream(pngFile).use { out ->
           bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 95, out)
         }
+        runCatching { pngFile.copyTo(java.io.File(rootSamplesDir, pngName), overwrite = true) }
         runCatching { pngFile.copyTo(java.io.File(artifactDir, pngName), overwrite = true) }
       }
     }
+  }
+
+  @Test
+  fun `verify phase 9 arabic rtl screens sample pdf preview and fast startup`() {
+    val startMs = System.currentTimeMillis()
+    composeTestRule.waitForIdle()
+    val startupElapsedMs = System.currentTimeMillis() - startMs
+    assertTrue("Startup and initial composition should stay fast (< 3000 ms), took ${startupElapsedMs}ms", startupElapsedMs < 3000L)
+
+    // Open onboarding dialog, switch to Privacy & Release tab, and close (which also dismisses welcome card)
+    composeTestRule.onNodeWithTag("top_bar_info_button").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("onboarding_release_dialog").assertExists()
+    composeTestRule.onNodeWithTag("onboarding_tab_privacy").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("privacy_version_card").assertExists()
+    composeTestRule.onNodeWithTag("finish_onboarding_btn").performClick()
+    composeTestRule.waitForIdle()
+
+    // Verify Sample PDF Showcase Card exists on HomeScreen and opens the Arabic RTL Sample PDF Preview Dialog
+    composeTestRule.onNodeWithTag("sample_pdf_reports_card").assertExists()
+    composeTestRule.onNodeWithTag("open_sample_pdf_ar_btn").performClick()
+    composeTestRule.waitForIdle()
+    composeTestRule.onNodeWithTag("sample_pdf_preview_dialog").assertExists()
+    composeTestRule.onNodeWithTag("close_sample_pdf_dialog_btn").performClick()
+    composeTestRule.waitForIdle()
   }
 }

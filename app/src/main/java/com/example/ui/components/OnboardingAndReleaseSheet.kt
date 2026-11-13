@@ -1440,11 +1440,16 @@ private fun PrivacyAndReleaseInfoContent(
         },
         body = when (language) {
             AppLanguage.AR -> buildString {
+                appendLine("• معرف التطبيق الرسمي: dz.fahs.app")
                 appendLine("• التخزين المحلي أولاً: جميع الفحوصات، الصور، والملاحظات تحفظ داخل هاتفك فقط ولا تغادره أبداً بدون إذنك.")
-                appendLine("• استخدام الكاميرا: تُستخدم الكاميرا حصرياً لتصوير ملاحظات وعيوب الفحص لإدراجها في تقرير PDF.")
-                appendLine("• استخدام البلوتوث: يُستخدم حصرياً للاتصال بفيشة الفحص ELM327 OBD2 في وضع القراءة الآمنة فقط.")
+                appendLine("• صلاحية الكاميرا: لتصوير ملاحظات الفحص وقراءة عداد الكيلومترات محلياً على الهاتف بدون إنترنت.")
+                appendLine("• صلاحية الميكروفون: لتحويل الملاحظات الصوتية إلى نص محلياً على الهاتف.")
+                appendLine("• صلاحية البلوتوث: للاتصال بفيشة ELM327 OBD2 في وضع القراءة الآمنة فقط.")
+                appendLine("• صلاحية الإشعارات: لإبقاء مراقبة تجربة القيادة تعمل بموثوقية حتى عند إغلاق الشاشة.")
                 appendLine("• النسخ الاحتياطي الاختياري: فقط في حال اخترت تسجيل الدخول بحساب Google والضغط على «حفظ سحابي»، يتم حفظ ملخصات الفحص في مساحتك الخاصة على Firebase Firestore.")
                 appendLine("• حذف بياناتك في أي وقت: يمكنك حذف أي فحص محلي أو حذف جميع النسخ الاحتياطية السحابية نهائياً بضغطة واحدة من شاشة «فحوصاتي».")
+                appendLine("• رابط سياسة الخصوصية: https://fahs.dz/privacy")
+                appendLine("• رابط حذف الحساب والبيانات: https://fahs.dz/delete-account")
                 if (shopSettings.contactEmail.isNotBlank()) {
                     appendLine("• البريد الإلكتروني للتواصل: ${shopSettings.contactEmail}")
                 }
@@ -1454,11 +1459,16 @@ private fun PrivacyAndReleaseInfoContent(
             }.trim()
 
             AppLanguage.FR -> buildString {
+                appendLine("• Identifiant officiel de l'application : dz.fahs.app")
                 appendLine("• Stockage local par défaut : Toutes vos inspections, photos et notes sont enregistrées uniquement sur votre téléphone.")
-                appendLine("• Caméra : Utilisée exclusivement pour photographier les défauts observés et les joindre à votre rapport PDF.")
+                appendLine("• Caméra : Utilisée uniquement pour photographier les défauts et lire le compteur kilométrique hors-ligne.")
+                appendLine("• Microphone : Utilisé uniquement pour dicter vos notes vocales sur le téléphone.")
                 appendLine("• Bluetooth : Utilisé exclusivement pour communiquer avec votre boîtier ELM327 OBD2 en lecture seule.")
+                appendLine("• Notifications : Utilisées pour garder le suivi de l'essai routier actif même écran éteint.")
                 appendLine("• Sauvegarde Cloud optionnelle : Uniquement si vous choisissez de vous connecter avec Google et cliquez sur « Sauvegarder », vos inspections sont copiées dans votre espace privé Cloud Firestore.")
                 appendLine("• Suppression des données : Vous pouvez supprimer à tout moment vos inspections locales ou effacer définitivement toutes vos sauvegardes Cloud depuis l'onglet « Inspections ».")
+                appendLine("• Politique de confidentialité : https://fahs.dz/privacy")
+                appendLine("• Suppression du compte et des données : https://fahs.dz/delete-account")
                 if (shopSettings.contactEmail.isNotBlank()) {
                     appendLine("• Email de contact : ${shopSettings.contactEmail}")
                 }
@@ -1468,11 +1478,16 @@ private fun PrivacyAndReleaseInfoContent(
             }.trim()
 
             AppLanguage.EN -> buildString {
+                appendLine("• Official Application ID: dz.fahs.app")
                 appendLine("• Offline Local Storage First: All your inspections, photos, and notes are stored strictly on your phone by default.")
-                appendLine("• Camera Permission: Used exclusively to photograph inspection findings and attach them to your PDF report.")
+                appendLine("• Camera Permission: Used solely to photograph inspection findings and read odometer mileage on-device offline.")
+                appendLine("• Microphone Permission: Used solely for on-device voice notes and voice answers.")
                 appendLine("• Bluetooth Permission: Used exclusively to communicate with your ELM327 OBD2 dongle in read-only mode.")
+                appendLine("• Notifications Permission: Used to keep automatic test-drive monitoring running reliably while the screen is off.")
                 appendLine("• Optional Cloud Backup: Only if you explicitly sign in with Google and tap 'Back Up' are your inspection summaries saved to your private Cloud Firestore space.")
                 appendLine("• Data Deletion: You can permanently delete any local inspection or erase all Cloud backups at any time from the 'Inspections' tab.")
+                appendLine("• Privacy Policy URL: https://fahs.dz/privacy")
+                appendLine("• Account & Data Deletion URL: https://fahs.dz/delete-account")
                 if (shopSettings.contactEmail.isNotBlank()) {
                     appendLine("• Contact Email: ${shopSettings.contactEmail}")
                 }
@@ -1520,15 +1535,15 @@ private fun PrivacyAndReleaseInfoContent(
             Text(
                 text = if (isDeveloperModeEnabled) {
                     when (language) {
-                        AppLanguage.AR -> "إصدار التطبيق 1.0 • وضع المطور مفعّل (اضغط 7 مرات لإيقافه)"
-                        AppLanguage.FR -> "Version 1.0 • Mode Développeur ACTIVÉ (7 appuis pour désactiver)"
-                        AppLanguage.EN -> "Version 1.0 • Developer Mode ENABLED (7 taps to disable)"
+                        AppLanguage.AR -> "إصدار التطبيق 1.0 (dz.fahs.app) • وضع المطور مفعّل (اضغط 7 مرات لإيقافه)"
+                        AppLanguage.FR -> "Version 1.0 (dz.fahs.app) • Mode Développeur ACTIVÉ (7 appuis pour désactiver)"
+                        AppLanguage.EN -> "Version 1.0 (dz.fahs.app) • Developer Mode ENABLED (7 taps to disable)"
                     }
                 } else {
                     when (language) {
-                        AppLanguage.AR -> "إصدار التطبيق 1.0 (Fahs DZ)"
-                        AppLanguage.FR -> "Version de l'application 1.0 (Fahs DZ)"
-                        AppLanguage.EN -> "Application Version 1.0 (Fahs DZ)"
+                        AppLanguage.AR -> "إصدار التطبيق 1.0 (dz.fahs.app)"
+                        AppLanguage.FR -> "Version de l'application 1.0 (dz.fahs.app)"
+                        AppLanguage.EN -> "Application Version 1.0 (dz.fahs.app)"
                     }
                 },
                 style = MaterialTheme.typography.labelMedium,

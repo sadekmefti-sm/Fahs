@@ -1,21 +1,27 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Fahs (dz.fahs.app) — Production ProGuard / R8 Rules
+# Preserves Room entities/DAOs, Cloud Firestore models, Google ML Kit OCR, and Credential Manager
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+-keepattributes SourceFile,LineNumberTable
+-keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Room Database Entities & DAOs
+-keep class * extends androidx.room.RoomDatabase
+-keep @androidx.room.Entity class * { *; }
+-keep @androidx.room.Dao class * { *; }
+-keep class com.example.data.local.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Cloud Firestore Serializable Models (CloudInspectionBackup, ShopSettings, WilayaDeliveryFee)
+-keep class com.example.data.repository.CloudInspectionBackup { *; }
+-keep class com.example.data.repository.ShopSettings { *; }
+-keep class com.example.data.repository.WilayaDeliveryFee { *; }
+-keep class com.example.data.model.** { *; }
+
+# Google ML Kit Bundled Text Recognition (Odometer & Tyre DOT OCR)
+-keep class com.google.mlkit.** { *; }
+-dontwarn com.google.mlkit.**
+
+# Firebase Auth, Firestore & Jetpack Credential Manager
+-keep class com.google.firebase.** { *; }
+-keep class androidx.credentials.** { *; }
+-keep class com.google.android.libraries.identity.googleid.** { *; }
+-dontwarn com.google.firebase.**
