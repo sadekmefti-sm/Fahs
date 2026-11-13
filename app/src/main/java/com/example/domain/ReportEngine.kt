@@ -48,6 +48,24 @@ data class ReportFindingItem(
     }
 }
 
+data class AreaScoreSummary(
+    val sectionOrder: Int,
+    val titleFr: String,
+    val titleAr: String,
+    val titleEn: String,
+    val checkedCount: Int,
+    val passedCount: Int,
+    val problemCount: Int,
+    val totalCount: Int,
+    val scorePercent: Int? // 0..100 when checkedCount > 0, or null when 0 checked
+) {
+    fun getTitle(lang: AppLanguage): String = when (lang) {
+        AppLanguage.AR -> titleAr
+        AppLanguage.FR -> titleFr
+        AppLanguage.EN -> titleEn
+    }
+}
+
 data class ObdReportBlockData(
     val isScanned: Boolean,
     val isCommunicationSuccess: Boolean,
@@ -60,7 +78,9 @@ data class ObdReportBlockData(
     val milBulbLitAtKeyOn: Boolean,
     val milCommandedByEcu: String, // ON, OFF, NOT_AVAILABLE
     val ecuVin: String,
-    val ecuVinComparison: String // SAME, DIFFERENT, COULD_NOT_COMPARE, NOT_AVAILABLE
+    val ecuVinComparison: String, // SAME, DIFFERENT, COULD_NOT_COMPARE, NOT_AVAILABLE
+    val faultCodeDetails: List<DtcInfo> = emptyList(),
+    val liveReadings: List<LiveParameterGauge> = emptyList()
 ) {
     val hasCriticalAlert: Boolean
         get() = isScanned && (
@@ -244,7 +264,8 @@ data class InspectionReportData(
     val coveragePercent: Int,
     val hasObdScanIncluded: Boolean,
     val obdSummaryNote: String?,
-    val obdBlock: ObdReportBlockData
+    val obdBlock: ObdReportBlockData,
+    val areaScores: List<AreaScoreSummary> = emptyList()
 ) {
     fun getVerdictTitle(lang: AppLanguage): String = when (verdict) {
         "INCOMPLETE" -> when (lang) {
@@ -639,17 +660,63 @@ object ReportEngine {
         }
 
         val criticalProblems = allFindings.filter { it.status == "PROBLEM" && it.severity == ItemSeverity.CRITICAL }
-        val negotiableProblems = allFindings.filter { it.status == "PROBLEM" && it.severity != ItemSeverity.CRITICAL }
+        val negotiableProblems = allFindings
+            .filter { it.status == "PROBLEM" && it.severity != ItemSeverity.CRITICAL }
+            .sortedByDescending { it.severity.weight }
         val passedItems = allFindings.filter { it.status == "GOOD" }
         val uncheckedItems = allFindings.filter { it.status == "UNCHECKED" }
         val uncheckedCriticalItems = uncheckedItems.filter { it.severity == ItemSeverity.CRITICAL }
+
+        // Build per-area scores for each checklist section
+        val areaScores: List<AreaScoreSummary> = adaptiveItems
+            .groupBy { it.section }
+            .entries
+            .sortedBy { it.key.order }
+            .map { (section, defsInSection) ->
+                var areaMaxPoints = 0
+                var areaDeducted = 0
+                var areaChecked = 0
+                var areaPassed = 0
+                var areaProblem = 0
+                for (def in defsInSection) {
+                    val st = answersById[def.id]?.status ?: "UNCHECKED"
+                    if (st == "GOOD" || st == "PROBLEM") {
+                        areaChecked++
+                        areaMaxPoints += def.severity.weight
+                        if (st == "GOOD") {
+                            areaPassed++
+                        } else {
+                            areaProblem++
+                            areaDeducted += def.severity.weight
+                        }
+                    }
+                }
+                val areaScorePct: Int? = if (areaChecked > 0 && areaMaxPoints > 0) {
+                    (((areaMaxPoints - areaDeducted).toDouble() / areaMaxPoints.toDouble()) * 100.0)
+                        .toInt()
+                        .coerceIn(0, 100)
+                } else {
+                    null
+                }
+                AreaScoreSummary(
+                    sectionOrder = section.order,
+                    titleFr = section.titleFr,
+                    titleAr = section.titleAr,
+                    titleEn = section.titleEn,
+                    checkedCount = areaChecked,
+                    passedCount = areaPassed,
+                    problemCount = areaProblem,
+                    totalCount = defsInSection.size,
+                    scorePercent = areaScorePct
+                )
+            }
 
         val checkedCount = passedItems.size + criticalProblems.size + negotiableProblems.size
         val totalApplicableCount = allFindings.size.coerceAtLeast(1)
         val coveragePercent = ((checkedCount.toDouble() / totalApplicableCount.toDouble()) * 100.0).toInt().coerceIn(0, 100)
 
         val minimumRequiredCount = kotlin.math.ceil(totalApplicableCount * ChecklistEngine.MINIMUM_ANSWERED_SHARE).toInt().coerceAtLeast(1)
-        val isMinimumThresholdMet = checkedCount >= minimumRequiredCount && uncheckedCriticalItems.isEmpty() && totalMaxPoints > 0
+        val isMinimumThresholdMet = checkedCount >= minimumRequiredCount && totalMaxPoints > 0
 
         val rawPercentage: Int? = if (isMinimumThresholdMet) {
             (((totalMaxPoints - deductedPoints).toDouble() / totalMaxPoints.toDouble()) * 100.0)
@@ -662,7 +729,7 @@ object ReportEngine {
         val finalScore: Int? = if (rawPercentage != null) {
             when {
                 hasCriticalProblem -> minOf(rawPercentage, 42)
-                importantProblemCount >= 3 -> minOf(rawPercentage, 68)
+                importantProblemCount >= 3 || uncheckedCriticalItems.isNotEmpty() -> minOf(rawPercentage, 68)
                 else -> rawPercentage
             }
         } else {
@@ -670,14 +737,14 @@ object ReportEngine {
         }
 
         val isCriticalCapTriggered = rawPercentage != null && hasCriticalProblem && rawPercentage > 42
-        val isImportantCapTriggered = rawPercentage != null && !hasCriticalProblem && importantProblemCount >= 3 && rawPercentage > 68
+        val isImportantCapTriggered = rawPercentage != null && !hasCriticalProblem && (importantProblemCount >= 3 || uncheckedCriticalItems.isNotEmpty()) && rawPercentage > 68
 
         val verdict = if (finalScore == null) {
             "INCOMPLETE"
         } else {
             when {
                 hasCriticalProblem || finalScore < 50 -> "AVOID"
-                finalScore < 78 || importantProblemCount >= 1 || allFindings.any { it.status == "PROBLEM" } -> "NEGOTIATE"
+                uncheckedCriticalItems.isNotEmpty() || finalScore < 78 || importantProblemCount >= 1 || allFindings.any { it.status == "PROBLEM" } -> "NEGOTIATE"
                 else -> "GOOD"
             }
         }
@@ -692,7 +759,7 @@ object ReportEngine {
         val effectiveMaxDzd = if (userMechanicQuoteDzd > 0) userMechanicQuoteDzd else verifiedMaxDzd
         val effectiveAvgDzd = if (userMechanicQuoteDzd > 0) userMechanicQuoteDzd else verifiedAvgDzd
 
-        val obdBlock = buildObdReportBlock(inspection, obdSaved)
+        val obdBlock = buildObdReportBlock(inspection, obdSaved, savedAnswers)
 
         return InspectionReportData(
             inspection = inspection,
@@ -716,14 +783,117 @@ object ReportEngine {
             coveragePercent = coveragePercent,
             hasObdScanIncluded = obdBlock.isScanned,
             obdSummaryNote = obdSaved?.note,
-            obdBlock = obdBlock
+            obdBlock = obdBlock,
+            areaScores = areaScores
         )
+    }
+
+    private fun parseFaultCodeDetails(dtcSummaryText: String): List<DtcInfo> {
+        if (dtcSummaryText.isBlank() || dtcSummaryText == "0 DTC") return emptyList()
+        val regex = Regex("""([PCBU]\d[0-9A-F]{3})(?:\s*\((STORED|PENDING|PERMANENT)\))?""", RegexOption.IGNORE_CASE)
+        return regex.findAll(dtcSummaryText).map { match ->
+            val code = match.groupValues[1].uppercase(Locale.US)
+            val typeStr = match.groupValues.getOrNull(2)?.uppercase(Locale.US).orEmpty()
+            val dtcType = when (typeStr) {
+                "PENDING" -> DtcType.PENDING
+                "PERMANENT" -> DtcType.PERMANENT
+                else -> DtcType.STORED
+            }
+            ObdDiagnosticEngine.lookupDtc(code, dtcType)
+        }.distinctBy { "${it.code}_${it.dtcType}" }.toList()
+    }
+
+    private fun parseLiveReadingsFromInspection(
+        inspection: InspectionEntity,
+        savedAnswers: List<ChecklistAnswerEntity>
+    ): List<LiveParameterGauge> {
+        val liveTagMatch = Regex("""\[OBD2 Live:\s*(.*?)]""").find(inspection.notes)
+        if (liveTagMatch != null) {
+            val rawPayload = liveTagMatch.groupValues[1]
+            val parsed = rawPayload.split(";").mapNotNull { entry ->
+                val parts = entry.split("|")
+                if (parts.size >= 3) {
+                    val idAndVal = parts[0]
+                    val id = idAndVal.substringBefore("=").trim()
+                    val valueText = idAndVal.substringAfter("=").trim()
+                    val normalRange = parts[1].trim()
+                    val status = parts[2].trim()
+                    val (nameFr, nameAr, nameEn) = when (id) {
+                        "temp" -> Triple("Température liquide (Coolant)", "حرارة سائل التبريد", "Coolant Temperature")
+                        "rpm" -> Triple("Régime ralenti (Idle RPM)", "سرعة دوران المحرك (Ralenti)", "Idle Engine Speed")
+                        "volt" -> Triple("Tension batterie & alternateur", "فولتية البطارية والدينامو", "Charging Voltage")
+                        "trim" -> Triple("Correction carburant (Fuel Trim)", "تصحيح خليط الوقود (Fuel Trim)", "Fuel Trim (STFT/LTFT)")
+                        "o2" -> Triple("Sonde Lambda (Capteur O2)", "حساس الأكسجين (Sonde Lambda)", "Oxygen Sensor (O2)")
+                        else -> Triple(id, id, id)
+                    }
+                    LiveParameterGauge(
+                        id = id,
+                        nameFr = nameFr,
+                        nameAr = nameAr,
+                        nameEn = nameEn,
+                        valueText = valueText,
+                        normalRangeText = normalRange,
+                        status = status
+                    )
+                } else null
+            }
+            if (parsed.isNotEmpty()) return parsed
+        }
+
+        // Fallback: extract any live readings recorded in auto-answered checklist items
+        val fallbackList = mutableListOf<LiveParameterGauge>()
+        val byId = savedAnswers.associateBy { it.itemId }
+        byId["after_temp_fan_operation"]?.takeIf { it.note.contains("°C") }?.let { ans ->
+            val valStr = Regex("""(-?\d+\s*°C)""").find(ans.note)?.value ?: ans.note
+            fallbackList.add(
+                LiveParameterGauge(
+                    id = "temp",
+                    nameFr = "Température liquide (Coolant)",
+                    nameAr = "حرارة سائل التبريد",
+                    nameEn = "Coolant Temperature",
+                    valueText = valStr,
+                    normalRangeText = "80 - 98 °C",
+                    status = if (ans.status == "GOOD") "GREEN" else "RED"
+                )
+            )
+        }
+        byId["start_idle_rpm_stability"]?.takeIf { it.note.contains("rpm", ignoreCase = true) || it.note.contains("tr/min", ignoreCase = true) || it.note.contains("د/د") }?.let { ans ->
+            val valStr = ans.note.substringAfter(":").trim().ifBlank { ans.note }
+            fallbackList.add(
+                LiveParameterGauge(
+                    id = "rpm",
+                    nameFr = "Régime ralenti (Idle RPM)",
+                    nameAr = "سرعة دوران المحرك (Ralenti)",
+                    nameEn = "Idle Engine Speed",
+                    valueText = valStr,
+                    normalRangeText = "680 - 900 tr/min",
+                    status = if (ans.status == "GOOD") "GREEN" else "ORANGE"
+                )
+            )
+        }
+        byId["bonnet_battery_alternator"]?.takeIf { it.note.contains("V") }?.let { ans ->
+            val valStr = Regex("""(\d+(?:[.,]\d+)?(?:\s*-\s*\d+(?:[.,]\d+)?)?\s*V)""").find(ans.note)?.value ?: ans.note
+            fallbackList.add(
+                LiveParameterGauge(
+                    id = "volt",
+                    nameFr = "Tension batterie & alternateur",
+                    nameAr = "فولتية البطارية والدينامو",
+                    nameEn = "Charging Voltage",
+                    valueText = valStr,
+                    normalRangeText = "13.5 - 14.7 V",
+                    status = if (ans.status == "GOOD") "GREEN" else "RED"
+                )
+            )
+        }
+        return fallbackList
     }
 
     private fun buildObdReportBlock(
         inspection: InspectionEntity,
-        obdSaved: ChecklistAnswerEntity?
+        obdSaved: ChecklistAnswerEntity?,
+        savedAnswers: List<ChecklistAnswerEntity> = emptyList()
     ): ObdReportBlockData {
+        val parsedLive = parseLiveReadingsFromInspection(inspection, savedAnswers)
         if (inspection.hasObdScan) {
             return ObdReportBlockData(
                 isScanned = true,
@@ -737,7 +907,9 @@ object ReportEngine {
                 milBulbLitAtKeyOn = inspection.obdMilBulbLitAtKeyOn,
                 milCommandedByEcu = inspection.obdMilCommandedByEcu,
                 ecuVin = inspection.obdEcuVin.ifBlank { inspection.vin },
-                ecuVinComparison = inspection.obdEcuVinComparison
+                ecuVinComparison = inspection.obdEcuVinComparison,
+                faultCodeDetails = parseFaultCodeDetails(inspection.obdDtcCodesSummary),
+                liveReadings = parsedLive
             )
         }
         if (obdSaved != null) {
@@ -748,12 +920,13 @@ object ReportEngine {
             val hasMilWarn = note.contains("Voyant Check-Engine absent", ignoreCase = true)
             val hasVinDiff = note.contains("différent de la carte grise", ignoreCase = true)
             val hasVinSame = note.contains("= Carte grise", ignoreCase = true)
+            val summaryCodes = note.removePrefix("[OBD2 Scan: ").substringBefore(" |").removeSuffix("]")
             return ObdReportBlockData(
                 isScanned = true,
                 isCommunicationSuccess = isCommOk,
                 protocolDescription = "",
                 dtcCount = if (note.contains("0 DTC")) 0 else if (obdSaved.status == "PROBLEM" && !hasClearedWarn && !hasMilWarn && !hasVinDiff) 1 else 0,
-                dtcSummaryText = note.removePrefix("[OBD2 Scan: ").substringBefore(" |").removeSuffix("]"),
+                dtcSummaryText = summaryCodes,
                 clearedCodesStatus = if (hasClearedWarn) "STRONG_WARNING" else if (isCommOk) "NONE_NORMAL" else "NOT_AVAILABLE",
                 distanceSinceClearedKm = null,
                 warmupsSinceCleared = null,
@@ -765,7 +938,9 @@ object ReportEngine {
                     hasVinSame -> "SAME"
                     inspection.vin.isNotBlank() -> "COULD_NOT_COMPARE"
                     else -> "NOT_AVAILABLE"
-                }
+                },
+                faultCodeDetails = parseFaultCodeDetails(summaryCodes),
+                liveReadings = parsedLive
             )
         }
         return ObdReportBlockData(
@@ -780,7 +955,9 @@ object ReportEngine {
             milBulbLitAtKeyOn = true,
             milCommandedByEcu = "NOT_AVAILABLE",
             ecuVin = inspection.vin,
-            ecuVinComparison = if (inspection.vin.isNotBlank()) "COULD_NOT_COMPARE" else "NOT_AVAILABLE"
+            ecuVinComparison = if (inspection.vin.isNotBlank()) "COULD_NOT_COMPARE" else "NOT_AVAILABLE",
+            faultCodeDetails = emptyList(),
+            liveReadings = emptyList()
         )
     }
 

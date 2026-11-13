@@ -891,12 +891,28 @@ class FahsViewModel(application: Application) : AndroidViewModel(application) {
             val answeredChecklistCount = adaptiveItems.count { updatedMap.containsKey(it.id) }
             val problemCount = updatedMap.values.count { it.status == "PROBLEM" }
 
-            val mergedNotes = if (current.notes.contains("[OBD2 Scan:")) {
+            val validLiveGauges = scanResult.liveParameters.filter { it.status != "UNAVAILABLE" }
+            val liveReadingsTag = if (validLiveGauges.isNotEmpty()) {
+                val payload = validLiveGauges.joinToString(";") { g ->
+                    "${g.id}=${g.valueText}|${g.normalRangeText}|${g.status}"
+                }
+                "[OBD2 Live: $payload]"
+            } else ""
+
+            val baseNotesWithObd = if (current.notes.contains("[OBD2 Scan:")) {
                 current.notes.replace(Regex("\\[OBD2 Scan:.*?]"), obdSummaryNote)
             } else if (current.notes.isBlank()) {
                 obdSummaryNote
             } else {
                 "${current.notes}\n$obdSummaryNote"
+            }
+
+            val mergedNotes = if (liveReadingsTag.isBlank()) {
+                baseNotesWithObd
+            } else if (baseNotesWithObd.contains("[OBD2 Live:")) {
+                baseNotesWithObd.replace(Regex("\\[OBD2 Live:.*?]"), liveReadingsTag)
+            } else {
+                "$baseNotesWithObd\n$liveReadingsTag"
             }
 
             val updatedVin = if (!scanResult.ecuVin.isNullOrBlank()) scanResult.ecuVin else current.vin

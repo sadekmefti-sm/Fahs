@@ -96,6 +96,33 @@ object InspectionPhotoHelper {
         }
     }
 
+    /**
+     * Loads, resizes, and JPEG-compresses a photo thumbnail specifically for embedding in A4 PDF reports
+     * so the resulting PDF file stays compact and fast to send on WhatsApp.
+     */
+    fun loadCompressedPdfThumbnailBitmap(
+        path: String?,
+        maxDimensionPx: Int = 180,
+        jpegQuality: Int = 72
+    ): Bitmap? {
+        val raw = loadThumbnailBitmap(path, maxDimensionPx) ?: return null
+        return try {
+            val scaled = scaleBitmapIfNeeded(raw, maxDimensionPx)
+            val baos = java.io.ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, jpegQuality, baos)
+            if (scaled !== raw) {
+                raw.recycle()
+            }
+            val bytes = baos.toByteArray()
+            val decodeOpts = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOpts) ?: scaled
+        } catch (_: Exception) {
+            raw
+        }
+    }
+
     fun isRealStoredPhoto(path: String?): Boolean {
         if (path.isNullOrBlank()) return false
         val file = File(path)

@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -29,9 +33,12 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.RemoveCircleOutline
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -41,6 +48,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -102,6 +110,7 @@ import com.example.ui.theme.StatusPassGreenOnContainer
 import com.example.ui.theme.StatusWarningAmber
 import com.example.ui.theme.StatusWarningAmberContainer
 import com.example.ui.theme.StatusWarningAmberOnContainer
+import java.io.File
 
 @Composable
 fun InspectionReportScreen(
@@ -140,6 +149,41 @@ fun InspectionReportScreen(
 
     var showPassedItems by remember { mutableStateOf(false) }
     var showUncheckedItems by remember { mutableStateOf(true) }
+
+    var pendingDownloadPdfFile by remember { mutableStateOf<File?>(null) }
+    var savedDownloadUri by remember { mutableStateOf<Uri?>(null) }
+    var savedDownloadFileName by remember { mutableStateOf<String?>(null) }
+
+    val downloadDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val destinationUri = result.data?.data
+        val sourceFile = pendingDownloadPdfFile
+        if (result.resultCode == Activity.RESULT_OK && destinationUri != null && sourceFile != null) {
+            val success = PdfReportGenerator.writePdfToDestinationUri(
+                context = context,
+                sourcePdfFile = sourceFile,
+                destinationUri = destinationUri
+            )
+            if (success) {
+                savedDownloadUri = destinationUri
+                savedDownloadFileName = sourceFile.name
+                val msg = when (language) {
+                    AppLanguage.AR -> "تم حفظ التقرير بنجاح (${sourceFile.name})"
+                    AppLanguage.FR -> "Rapport PDF enregistré avec succès (${sourceFile.name})"
+                    AppLanguage.EN -> "PDF report saved successfully (${sourceFile.name})"
+                }
+                onPdfGeneratedNotification(msg)
+            } else {
+                val errMsg = when (language) {
+                    AppLanguage.AR -> "تعذر حفظ ملف PDF في المجلد المختار."
+                    AppLanguage.FR -> "Impossible d'enregistrer le fichier PDF à l'emplacement choisi."
+                    AppLanguage.EN -> "Could not save the PDF file to the selected location."
+                }
+                onPdfGeneratedNotification(errMsg)
+            }
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -237,7 +281,84 @@ fun InspectionReportScreen(
             }
         }
 
-        // 3. Primary Actions: Export/Share PDF + Edit Checklist + Scan OBD2
+        // 2c. Phase 8: Scores per Area Card (horizontal bars matching the PDF report)
+        if (report.areaScores.isNotEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("scores_per_area_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, Slate200)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = when (language) {
+                                AppLanguage.AR -> "النتائج حسب قسم الفحص"
+                                AppLanguage.FR -> "Scores par zone d'inspection"
+                                AppLanguage.EN -> "Scores per Inspection Area"
+                            },
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Slate900
+                        )
+                        report.areaScores.forEach { area ->
+                            val scorePct = area.scorePercent
+                            val barColor = when {
+                                scorePct == null -> Slate300
+                                scorePct >= 75 -> StatusPassGreen
+                                scorePct >= 50 -> StatusWarningAmber
+                                else -> StatusErrorRed
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = area.getTitle(language),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Slate800,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = if (scorePct != null) {
+                                            "$scorePct% (${area.passedCount}/${area.checkedCount})"
+                                        } else {
+                                            when (language) {
+                                                AppLanguage.AR -> "غير مفحوص (0/${area.totalCount})"
+                                                AppLanguage.FR -> "Non vérifié (0/${area.totalCount})"
+                                                AppLanguage.EN -> "Not checked (0/${area.totalCount})"
+                                            }
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (scorePct != null) barColor else Slate600
+                                    )
+                                }
+                                LinearProgressIndicator(
+                                    progress = { (scorePct ?: 0) / 100f },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(4.dp)),
+                                    color = barColor,
+                                    trackColor = Slate100
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Phase 8 Primary Actions: Download PDF + Share PDF + Post-Save Confirmation with "Open" Action
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -249,45 +370,215 @@ fun InspectionReportScreen(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Button(
-                        onClick = {
-                            val file = PdfReportGenerator.sharePdfReport(
-                                context = context,
-                                report = report,
-                                language = language,
-                                sellerAskingMillions = askingMillions.takeIf { it > 0.0 },
-                                mechanicQuotedRepairDzd = mechanicQuoteDzd.takeIf { it > 0 }
-                            )
-                            val msg = when (language) {
-                                AppLanguage.AR -> "تم إنشاء تقرير PDF جاهز للمشاركة (${file.name})"
-                                AppLanguage.FR -> "Rapport PDF généré et prêt à partager (${file.name})"
-                                AppLanguage.EN -> "PDF report generated and ready to share (${file.name})"
-                            }
-                            onPdfGeneratedNotification(msg)
+                    val suggestedFileName = remember(inspection) {
+                        PdfReportGenerator.buildSuggestedFileName(inspection)
+                    }
+                    Text(
+                        text = when (language) {
+                            AppLanguage.AR -> "تقرير PDF الاحترافي ($suggestedFileName)"
+                            AppLanguage.FR -> "Rapport PDF Professionnel ($suggestedFileName)"
+                            AppLanguage.EN -> "Professional PDF Report ($suggestedFileName)"
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .testTag("export_pdf_btn"),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Emerald700)
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Slate700
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.PictureAsPdf,
-                            contentDescription = null,
-                            tint = Color.White
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = when (language) {
-                                AppLanguage.AR -> "حفظ ومشاركة التقرير PDF (واتساب / ملفات)"
-                                AppLanguage.FR -> "Exporter & Partager le PDF (WhatsApp / Fichiers)"
-                                AppLanguage.EN -> "Export & Share PDF Report (WhatsApp / Files)"
+                        // Button 1: Download (Android standard "save file" picker defaulting to Documents/Fahs)
+                        Button(
+                            onClick = {
+                                val generatedFile = PdfReportGenerator.generatePdfFile(
+                                    context = context,
+                                    report = report,
+                                    language = language,
+                                    sellerAskingMillions = askingMillions.takeIf { it > 0.0 },
+                                    mechanicQuotedRepairDzd = mechanicQuoteDzd.takeIf { it > 0 }
+                                )
+                                pendingDownloadPdfFile = generatedFile
+                                val createIntent = PdfReportGenerator.createDownloadDocumentIntent(generatedFile.name)
+                                try {
+                                    downloadDocumentLauncher.launch(createIntent)
+                                } catch (_: Exception) {
+                                    val msg = when (language) {
+                                        AppLanguage.AR -> "تم تحضير ملف PDF (${generatedFile.name})"
+                                        AppLanguage.FR -> "Fichier PDF prêt (${generatedFile.name})"
+                                        AppLanguage.EN -> "PDF file ready (${generatedFile.name})"
+                                    }
+                                    onPdfGeneratedNotification(msg)
+                                }
                             },
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp)
+                                .testTag("download_pdf_btn"),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Emerald800)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = when (language) {
+                                    AppLanguage.AR -> "تنزيل (حفظ)"
+                                    AppLanguage.FR -> "Télécharger"
+                                    AppLanguage.EN -> "Download"
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        // Button 2: Share (Android share sheet with PDF attached for WhatsApp, email, etc.)
+                        Button(
+                            onClick = {
+                                val file = PdfReportGenerator.sharePdfReport(
+                                    context = context,
+                                    report = report,
+                                    language = language,
+                                    sellerAskingMillions = askingMillions.takeIf { it > 0.0 },
+                                    mechanicQuotedRepairDzd = mechanicQuoteDzd.takeIf { it > 0 }
+                                )
+                                val msg = when (language) {
+                                    AppLanguage.AR -> "تم إنشاء تقرير PDF جاهز للمشاركة (${file.name})"
+                                    AppLanguage.FR -> "Rapport PDF généré et prêt à partager (${file.name})"
+                                    AppLanguage.EN -> "PDF report generated and ready to share (${file.name})"
+                                }
+                                onPdfGeneratedNotification(msg)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp)
+                                .testTag("export_pdf_btn"),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Emerald600)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = when (language) {
+                                    AppLanguage.AR -> "مشاركة PDF"
+                                    AppLanguage.FR -> "Partager"
+                                    AppLanguage.EN -> "Share"
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    // Post-save confirmation banner with "Open" action
+                    AnimatedVisibility(visible = savedDownloadUri != null) {
+                        val currentSavedUri = savedDownloadUri
+                        val currentSavedName = savedDownloadFileName ?: suggestedFileName
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("downloaded_pdf_confirmation_card"),
+                            shape = RoundedCornerShape(12.dp),
+                            color = StatusPassGreenContainer,
+                            border = BorderStroke(1.dp, StatusPassGreen)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = StatusPassGreenOnContainer,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = when (language) {
+                                                AppLanguage.AR -> "تم حفظ التقرير على الهاتف"
+                                                AppLanguage.FR -> "Rapport enregistré sur le téléphone"
+                                                AppLanguage.EN -> "Report saved on phone"
+                                            },
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = StatusPassGreenOnContainer
+                                        )
+                                        Text(
+                                            text = currentSavedName,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Slate800,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(
+                                    onClick = {
+                                        if (currentSavedUri != null) {
+                                            val opened = PdfReportGenerator.openSavedPdfUri(
+                                                context = context,
+                                                pdfUri = currentSavedUri,
+                                                language = language
+                                            )
+                                            if (!opened) {
+                                                val noViewerMsg = when (language) {
+                                                    AppLanguage.AR -> "لا يوجد تطبيق قارئ PDF مثبت على الهاتف."
+                                                    AppLanguage.FR -> "Aucune application de lecture PDF installée."
+                                                    AppLanguage.EN -> "No PDF viewer app installed on this phone."
+                                                }
+                                                onPdfGeneratedNotification(noViewerMsg)
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("open_downloaded_pdf_btn"),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Emerald800),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.OpenInNew,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = when (language) {
+                                            AppLanguage.AR -> "فتح"
+                                            AppLanguage.FR -> "Ouvrir"
+                                            AppLanguage.EN -> "Open"
+                                        },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     Row(
